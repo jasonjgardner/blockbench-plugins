@@ -2,12 +2,32 @@
 (() => {
   // src/index.ts
   (() => {
-    const { WebGLRenderer, PerspectiveCamera, Scene, MeshStandardMaterial } = THREE;
+    const {
+      WebGLRenderer,
+      PerspectiveCamera,
+      Scene,
+      MeshStandardMaterial,
+      OrbitControls
+    } = THREE;
     let sendToSubstanceAction;
     let dialogBtn;
     let dialogElement;
     let panel;
+    const NA_CHANNEL = "_NONE_";
     class PbrMaterial {
+      static getMaterial() {
+        const emissiveMap = PbrMaterial.getTexture("emissive");
+        return new MeshStandardMaterial({
+          map: PbrMaterial.getTexture("albedo") ?? new THREE.CanvasTexture(Texture.all[0]?.canvas),
+          normalMap: PbrMaterial.getTexture("normal"),
+          roughnessMap: PbrMaterial.getTexture("roughness"),
+          metalnessMap: PbrMaterial.getTexture("metalness"),
+          bumpMap: PbrMaterial.getTexture("heightmap"),
+          emissiveMap,
+          emissiveIntensity: emissiveMap ? 1 : 0,
+          emissive: emissiveMap ? 16777215 : 0
+        });
+      }
       static saveTexture(name, src) {
         localStorage.setItem(
           "pbr_textures",
@@ -24,10 +44,9 @@
         const projectsJson = localStorage.getItem("pbr_textures");
         const projects = projectsJson ? JSON.parse(projectsJson) : {};
         const projectData = projects[Project.uuid] ?? {};
-        console.log("Project data", projectData);
         const filenameRegex = new RegExp(`_${name}(.[^.]+)?$`, "i");
         const src = Project.textures?.find(
-          (t) => projectData[name] === t.uuid || filenameRegex.test(t.name)
+          (t) => projectData[name] === t.uuid || filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL
         );
         if (!src) {
           return null;
@@ -35,25 +54,6 @@
         const texture = new THREE.CanvasTexture(src.canvas);
         texture.needsUpdate = true;
         return texture;
-      }
-    }
-    class PbrPreviewScene {
-      constructor() {
-        this.material = null;
-        this.scene = new Scene();
-        this.scene.background = new THREE.Color(1907997);
-        this.scene.add(new THREE.AmbientLight(16711422, 0.125));
-        const light = new THREE.DirectionalLight(16777215, 1);
-        light.position.set(-5, 10, 10);
-        light.castShadow = true;
-        this.scene.add(light);
-        this.scene.add(light.target);
-        this.updateScene();
-      }
-      updateScene() {
-        this.material = PbrPreviewScene.getMaterial();
-        const meshes = PbrPreviewScene.getBbMesh(this.material);
-        this.scene.add(...meshes);
       }
       static extractChannel(texture, channel) {
         const canvas = texture.image;
@@ -92,20 +92,43 @@
           return null;
         }
         return {
-          metalness: PbrPreviewScene.extractChannel(texture, 0) ?? void 0,
-          emissive: PbrPreviewScene.extractChannel(texture, 1) ?? void 0,
-          roughness: PbrPreviewScene.extractChannel(texture, 2) ?? void 0
+          metalness: PbrMaterial.extractChannel(texture, 0) ?? void 0,
+          emissive: PbrMaterial.extractChannel(texture, 1) ?? void 0,
+          roughness: PbrMaterial.extractChannel(texture, 2) ?? void 0
         };
       }
-      static getMaterial() {
-        return new MeshStandardMaterial({
-          map: PbrMaterial.getTexture("albedo") ?? new THREE.CanvasTexture(Texture.all[0]?.canvas),
-          normalMap: PbrMaterial.getTexture("normal"),
-          roughnessMap: PbrMaterial.getTexture("roughness"),
-          metalnessMap: PbrMaterial.getTexture("metalness"),
-          bumpMap: PbrMaterial.getTexture("heightmap"),
-          emissiveMap: PbrMaterial.getTexture("emissive")
+    }
+    class PbrPreviewScene {
+      constructor() {
+        this.material = null;
+        this.scene = new Scene();
+        this.scene.background = new THREE.Color(1907997);
+        this.scene.add(new THREE.AmbientLight(16711422, 0.75));
+        this.addLights({
+          position: new THREE.Vector3(-5, 10, 10)
         });
+        this.scene.fog = new THREE.Fog(16777215, 5, 100);
+        this.updateScene();
+      }
+      addLights({
+        color = 16777215,
+        intensity = 1,
+        position
+      } = {}) {
+        const light = new THREE.DirectionalLight(color, intensity);
+        light.position.set(0, 0, 0);
+        if (position) {
+          light.position.copy(position);
+        }
+        light.target.position.set(0, 0, 0);
+        light.castShadow = true;
+        this.scene.add(light);
+        this.scene.add(light.target);
+      }
+      updateScene() {
+        this.material = PbrMaterial.getMaterial();
+        const meshes = PbrPreviewScene.getBbMesh(this.material);
+        this.scene.add(...meshes);
       }
       static getBbMesh(material) {
         const meshes = [];
@@ -127,7 +150,7 @@
         return meshes;
       }
     }
-    const createPanelComponent = ({ panelSize }) => {
+    const createPanelComponent = ({ panelSize, scene }) => {
       return Vue.extend({
         name: "PbrTexturePreview",
         template: (
@@ -135,6 +158,42 @@
           `
         <div class="pbr-preview">
           <div ref="canvas" class="pbr-preview__canvas"></div>
+          <button type="button" v-on:click="toggleAnimation">
+            <span v-if="runAnimation">Stop</span>
+            <span v-else>Start</span>
+          </button>
+          <button type="button" v-on:click="updateScene">
+            Reload
+          </button>
+          <button type="button" v-on:click="resetRotation">
+            Reset
+          </button>
+          <label for="zoom">Zoom</label>
+          <input
+            type="range"
+            id="zoom"
+            v-model="zoomLevel"
+            min="1"
+            max="20"
+            step="1"
+          />
+          <p>{{ zoomLevel }}&times;</p>
+          <label for="fov">Field of View</label>
+          <input
+            type="range"
+            id="fov"
+            v-model="fov"
+            min="1"
+            max="180"
+            step="1"
+          />
+          <p>{{ fov }}&deg;</p>
+          <label for="rotationAxis">Rotation Axis</label>
+          <select id="rotationAxis" v-model="rotationAxis">
+            <option value="x">X</option>
+            <option value="y">Y</option>
+            <option value="z">Z</option>
+          </select>
         </div>
         <style>
           .pbr-preview {
@@ -155,37 +214,86 @@
         ),
         data() {
           return {
-            scene: new PbrPreviewScene(),
-            renderer: new WebGLRenderer(),
-            camera: new PerspectiveCamera(50, 1, 0.1, 2e3),
-            zoomLevel: 7
+            scene,
+            renderer: null,
+            canvas: null,
+            camera: null,
+            zoomLevel: 7,
+            runAnimation: true,
+            fov: 75,
+            rotationAxis: "y"
           };
         },
+        beforeDestroy() {
+          this.renderer?.dispose();
+        },
         mounted() {
+          this.renderer = new WebGLRenderer({ antialias: true });
           this.renderer.setSize(panelSize, panelSize);
+          this.renderer.physicallyCorrectLights = true;
           if (this.$refs.canvas) {
-            this.$refs.canvas.appendChild(this.renderer.domElement);
+            this.canvas = this.$refs.canvas.appendChild(
+              this.renderer.domElement
+            );
             this.init();
           }
         },
         methods: {
           init() {
+            this.setCamera();
+            this.animate();
+          },
+          toggleAnimation() {
+            this.runAnimation = !this.runAnimation;
+            if (this.runAnimation) {
+              this.animate();
+            }
+          },
+          updateScene() {
+            this.scene.updateScene();
+          },
+          setCamera() {
+            this.camera = new PerspectiveCamera(this.fov, 1, 0.1, 1e3);
             this.camera.position.z = this.zoomLevel;
             this.camera.position.y = this.zoomLevel;
             this.camera.position.x = this.zoomLevel;
             this.camera.lookAt(0, 0, 0);
-            this.animate();
           },
           animate() {
+            if (!this.runAnimation) {
+              return;
+            }
             requestAnimationFrame(this.animate);
-            this.scene.scene.rotation.y += 0.01;
-            this.renderer.render(this.scene.scene, this.camera);
+            this.scene.scene.rotation[this.rotationAxis] += 0.01;
+            this.render();
+          },
+          resetRotation() {
+            this.scene.scene.rotation.set(0, 0, 0);
+            this.render();
+          },
+          render() {
+            this.renderer?.render(
+              this.scene.scene,
+              this.camera ?? new PerspectiveCamera()
+            );
+          }
+        },
+        watch: {
+          zoomLevel() {
+            this.setCamera();
+            this.render();
+          },
+          fov() {
+            this.setCamera();
+            this.render();
           }
         }
       });
     };
     const createDialogForm = () => {
-      const options = {};
+      const options = {
+        [NA_CHANNEL]: "None"
+      };
       Project.textures?.forEach((texture) => {
         if (!(texture instanceof Texture)) {
           return;
@@ -248,12 +356,14 @@
       new_repository_format: true,
       onload() {
         let panelSize = 600;
+        const scene = new PbrPreviewScene();
         panel = new Panel({
           id: "threejs_material_viewer",
           name: "PBR Material Preview",
           condition: { modes: ["edit", "paint"] },
           component: createPanelComponent({
-            panelSize
+            panelSize,
+            scene
           }),
           toolbars: [],
           icon: "flare",
@@ -288,6 +398,7 @@
             PbrMaterial.saveTexture("roughness", formResult.roughnessMap);
             PbrMaterial.saveTexture("metalness", formResult.metalnessMap);
             PbrMaterial.saveTexture("emissive", formResult.emissiveMap);
+            scene.updateScene();
           }
           // sidebar: {
           //   pages: {
