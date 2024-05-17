@@ -5,18 +5,55 @@
  */
 /// <reference types="three" />
 /// <reference path="../../../types/index.d.ts" />
-(function () {
-  const {
-    WebGLRenderer,
-    PerspectiveCamera,
-    Scene,
-    MeshStandardMaterial,
-  } = THREE;
+(() => {
+  const { WebGLRenderer, PerspectiveCamera, Scene, MeshStandardMaterial } =
+    THREE;
+
   let sendToSubstanceAction: Action;
   let dialogBtn: Action;
   let dialogElement: Dialog;
   let panel: Panel;
 
+  class PbrMaterial {
+    static saveTexture(name: string, src: string) {
+      localStorage.setItem(
+        "pbr_textures",
+        JSON.stringify({
+          ...JSON.parse(localStorage.getItem("pbr_textures") ?? "{}"),
+          [Project.uuid]: {
+            ...JSON.parse(localStorage.getItem("pbr_textures") ?? "{}")[
+              Project.uuid
+            ],
+            [name]: src,
+          },
+        }),
+      );
+    }
+
+    static getTexture(name: string) {
+      const projectsJson = localStorage.getItem("pbr_textures");
+      const projects = projectsJson ? JSON.parse(projectsJson) : {};
+
+      const projectData = projects[Project.uuid] ?? {};
+
+      console.log("Project data", projectData);
+
+      const filenameRegex = new RegExp(`_${name}(\.[^.]+)?$`, "i");
+      const src = Project.textures?.find((t: Texture) =>
+        projectData[name] === t.uuid || filenameRegex.test(t.name),
+      );
+
+      if (!src) {
+        return null;
+      }
+
+      const texture = new THREE.CanvasTexture(src.canvas);
+
+      texture.needsUpdate = true;
+
+      return texture;
+    }
+  }
   class PbrPreviewScene {
     scene: THREE.Scene;
     material: THREE.MeshStandardMaterial | null = null;
@@ -24,11 +61,11 @@
     constructor() {
       this.scene = new Scene();
       this.scene.background = new THREE.Color(0x1d1d1d);
-      this.scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      this.scene.add(new THREE.AmbientLight(0xfefefe, 0.125));
 
       // Create a directional light
       const light = new THREE.DirectionalLight(0xffffff, 1);
-      light.position.set(0, 20, 10);
+      light.position.set(-5, 10, 10);
       light.castShadow = true;
 
       this.scene.add(light);
@@ -38,31 +75,11 @@
     }
 
     updateScene() {
-      if (!this.material) {
-        this.material = PbrPreviewScene.getMaterial();
-      }
+      this.material = PbrPreviewScene.getMaterial();
 
       const meshes = PbrPreviewScene.getBbMesh(this.material);
 
-      this.scene.children = this.scene.children.filter(
-        (child) => !(child instanceof THREE.Mesh)
-      );
-
       this.scene.add(...meshes);
-    }
-
-    static getTexture(name: string) {
-      const src = Texture.all.find((t) => t.name.includes(`_${name}`))?.canvas;
-
-      if (!src) {
-        return null;
-      }
-
-      const texture = new THREE.Texture(src);
-
-      texture.needsUpdate = true;
-
-      return texture;
     }
 
     static extractChannel(texture: THREE.Texture, channel: number) {
@@ -116,7 +133,7 @@
       roughness?: THREE.Texture;
     } | null {
       // Extract metalness, emissive, and roughness from the texture's red, green, and blue channels respectively
-      const texture = PbrPreviewScene.getTexture("mer");
+      const texture = PbrMaterial.getTexture("mer");
 
       if (!texture) {
         return null;
@@ -134,13 +151,13 @@
 
       return new MeshStandardMaterial({
         map:
-          PbrPreviewScene.getTexture("albedo") ??
-          new THREE.Texture(Texture.all[0]?.canvas),
-        normalMap: PbrPreviewScene.getTexture("normal"),
-        roughnessMap: PbrPreviewScene.getTexture("roughness"),
-        metalnessMap: PbrPreviewScene.getTexture("metalness"),
-        bumpMap: PbrPreviewScene.getTexture("heightmap"),
-        emissiveMap: PbrPreviewScene.getTexture("emissive"),
+          PbrMaterial.getTexture("albedo") ??
+          new THREE.CanvasTexture(Texture.all[0]?.canvas),
+        normalMap: PbrMaterial.getTexture("normal"),
+        roughnessMap: PbrMaterial.getTexture("roughness"),
+        metalnessMap: PbrMaterial.getTexture("metalness"),
+        bumpMap: PbrMaterial.getTexture("heightmap"),
+        emissiveMap: PbrMaterial.getTexture("emissive"),
       });
     }
 
@@ -200,7 +217,8 @@
         return {
           scene: new PbrPreviewScene(),
           renderer: new WebGLRenderer(),
-          camera: new PerspectiveCamera(75, 1, 0.1, 1000),
+          camera: new PerspectiveCamera(50, 1, 0.1, 2000),
+          zoomLevel: 7,
         };
       },
       mounted() {
@@ -213,9 +231,9 @@
       },
       methods: {
         init() {
-          this.camera.position.z = 5;
-          this.camera.position.y = 6;
-          this.camera.position.x = 5;
+          this.camera.position.z = this.zoomLevel;
+          this.camera.position.y = this.zoomLevel;
+          this.camera.position.x = this.zoomLevel;
 
           this.camera.lookAt(0, 0, 0);
 
@@ -232,15 +250,74 @@
     });
   };
 
-  BBPlugin.register("pbr", {
+  const createDialogForm = (): DialogOptions["form"] => {
+    const options: DialogFormElement["options"] = {};
+
+    Project.textures?.forEach((texture: Texture | any) => {
+      if (!(texture instanceof Texture)) {
+        return;
+      }
+
+      if (texture.name && texture.name.length > 0) {
+        options[texture.uuid] = texture.name;
+      }
+    });
+
+    return {
+      color: {
+        type: "color",
+        label: "Color",
+        value: "#ffffff",
+      },
+      albedoMap: {
+        label: "Albedo Map",
+        description: "Select a file for the albedo channel",
+        type: "select",
+        options,
+      },
+      normalMap: {
+        label: "Normal Map",
+        description: "Select a texture for the normal map channel",
+        type: "select",
+        options,
+      },
+      heightMap: {
+        label: "Height Map",
+        description: "Select a file for the heightmap/bump map channel",
+        type: "select",
+        options,
+      },
+      roughnessMap: {
+        label: "Roughness Map",
+        description: "Select a file for the roughness channel",
+        type: "select",
+        options,
+      },
+      metalnessMap: {
+        label: "Metalness Map",
+        description: "Select a file for the metallic channel",
+        type: "select",
+        options,
+      },
+      emissiveMap: {
+        label: "Emissive Map",
+        description: "Select a file for the emissive channel",
+        type: "select",
+        options,
+      },
+    };
+  };
+
+  BBPlugin.register("pbr_preview", {
     title: "PBR Features",
     author: "Jason J. Gardner",
     description: "Adds PBR features to Blockbench",
     icon: "flare",
     variant: "both",
     await_loading: true,
+    new_repository_format: true,
     onload() {
-      let panelSize = 400;
+      let panelSize = 600;
 
       panel = new Panel({
         id: "threejs_material_viewer",
@@ -269,10 +346,27 @@
           project: true,
         },
       });
+
       dialogElement = new Dialog("pbr.dialog", {
-        title: "PBR Options",
+        title: "PBR Channels",
         id: "pbr_dialog",
-        form: {},
+        form: createDialogForm() ?? {},
+        onConfirm(formResult) {
+          PbrMaterial.saveTexture("albedo", formResult.albedoMap);
+          PbrMaterial.saveTexture("normal", formResult.normalMap);
+          PbrMaterial.saveTexture("heightmap", formResult.heightMap);
+          PbrMaterial.saveTexture("roughness", formResult.roughnessMap);
+          PbrMaterial.saveTexture("metalness", formResult.metalnessMap);
+          PbrMaterial.saveTexture("emissive", formResult.emissiveMap);
+        },
+        // sidebar: {
+        //   pages: {
+        //     normalMap: {
+        //       icon: "altitude",
+        //       label: "Normal Map",
+        //     }
+        //   },
+        // }
       });
 
       dialogBtn = new Action("pbr.show_dialog", {
@@ -287,21 +381,21 @@
       MenuBar.addAction(dialogBtn, "tools.pbr");
 
       if (isApp) {
-        (sendToSubstanceAction = new Action("pbr.send_to_substance", {
+        sendToSubstanceAction = new Action("pbr.send_to_substance", {
           icon: "view_in_ar",
           description: "Send to Adobe Substance 3D",
           click: () => {
             console.log("Open Substance 3D");
             // Run command line to open Substance 3D
           },
-        })),
-          MenuBar.addAction(sendToSubstanceAction, "file.export");
+        });
+        MenuBar.addAction(sendToSubstanceAction, "file.export");
       }
     },
     onunload() {
-      dialogBtn.delete();
-      dialogElement.delete();
-      panel.delete();
+      dialogBtn?.delete();
+      dialogElement?.delete();
+      panel?.delete();
       if (isApp) {
         sendToSubstanceAction.delete();
       }

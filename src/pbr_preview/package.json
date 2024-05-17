@@ -4,9 +4,9 @@
   "description": "PBR support for Blockbench",
   "main": "./src/index.ts",
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --minify --outfile=../pbr_preview/pbr_preview.js",
+    "build": "esbuild src/index.ts --bundle --minify --outfile=../../plugins/pbr_preview/pbr_preview.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "esbuild src/index.ts --bundle --sourcemap --outfile=../pbr_preview/pbr_preview.js --watch",
+    "dev": "esbuild src/index.ts --bundle --sourcemap --outfile=../../plugins/pbr_preview/pbr_preview.js --watch",
     "format": "prettier --write src/**/*.ts"
   },
   "keywords": [
