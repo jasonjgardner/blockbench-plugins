@@ -6,23 +6,18 @@
 /// <reference types="three" />
 /// <reference path="../../../types/index.d.ts" />
 (() => {
-  const {
-    WebGLRenderer,
-    PerspectiveCamera,
-    Scene,
-    MeshStandardMaterial,
-    OrbitControls,
-  } = THREE;
+  const { MeshStandardMaterial } = THREE;
 
   let sendToSubstanceAction: Action;
   let dialogBtn: Action;
   let dialogElement: Dialog;
-  let panel: Panel;
+  let preview: Preview;
 
   const NA_CHANNEL = "_NONE_";
+  const PLUGIN_ID = "pbr_preview";
 
   class PbrMaterial {
-    static getMaterial() {
+    static getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
       // const mer = PbrPreviewScene.decodeMer();
 
       const emissiveMap = PbrMaterial.getTexture("emissive");
@@ -31,6 +26,7 @@
         map:
           PbrMaterial.getTexture("albedo") ??
           new THREE.CanvasTexture(Texture.all[0]?.canvas),
+        aoMap: PbrMaterial.getTexture("ao"),
         normalMap: PbrMaterial.getTexture("normal"),
         roughnessMap: PbrMaterial.getTexture("roughness"),
         metalnessMap: PbrMaterial.getTexture("metalness"),
@@ -38,6 +34,7 @@
         emissiveMap,
         emissiveIntensity: emissiveMap ? 1 : 0,
         emissive: emissiveMap ? 0xffffff : 0,
+        ...options,
       });
     }
 
@@ -56,6 +53,23 @@
       );
     }
 
+    static removeTexture(name: string) {
+      const projectsJson = localStorage.getItem("pbr_textures");
+      const projects = projectsJson ? JSON.parse(projectsJson) : {};
+
+      const projectData = projects[Project.uuid] ?? {};
+
+      delete projectData[name];
+
+      localStorage.setItem(
+        "pbr_textures",
+        JSON.stringify({
+          ...projects,
+          [Project.uuid]: projectData,
+        }),
+      );
+    }
+
     static getTexture(name: string) {
       const projectsJson = localStorage.getItem("pbr_textures");
       const projects = projectsJson ? JSON.parse(projectsJson) : {};
@@ -65,7 +79,8 @@
       const filenameRegex = new RegExp(`_${name}(\.[^.]+)?$`, "i");
       const src = Project.textures?.find(
         (t: Texture) =>
-          projectData[name] === t.uuid || (filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL),
+          projectData[name] === t.uuid ||
+          (filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL),
       );
 
       if (!src) {
@@ -143,243 +158,6 @@
       };
     }
   }
-  class PbrPreviewScene {
-    scene: THREE.Scene;
-    material: THREE.MeshStandardMaterial | null = null;
-
-    constructor() {
-      this.scene = new Scene();
-      this.scene.background = new THREE.Color(0x1d1d1d);
-      this.scene.add(new THREE.AmbientLight(0xfefefe, 0.75));
-
-      this.addLights({
-        position: new THREE.Vector3(-5, 10, 10),
-      });
-
-      this.scene.fog = new THREE.Fog(0xffffff, 5, 100);
-
-      this.updateScene();
-    }
-
-    addLights({
-      color = 0xffffff,
-      intensity = 1,
-      position,
-    }: {
-      color?: THREE.Color | string | number;
-      intensity?: number;
-      position?: THREE.Vector3;
-    } = {}) {
-      // Create a directional light
-      const light = new THREE.DirectionalLight(color, intensity);
-      light.position.set(0, 0, 0);
-
-      if (position) {
-        light.position.copy(position);
-      }
-
-      light.target.position.set(0, 0, 0);
-
-      light.castShadow = true;
-
-      this.scene.add(light);
-      this.scene.add(light.target);
-    }
-
-    updateScene() {
-      this.material = PbrMaterial.getMaterial();
-
-      const meshes = PbrPreviewScene.getBbMesh(this.material);
-
-      this.scene.add(...meshes);
-    }
-
-    static getBbMesh(material: THREE.MeshStandardMaterial) {
-      const meshes: THREE.Mesh[] = [];
-      // Get currently visible Blockbench mesh
-      Outliner.elements.forEach((item) => {
-        const bbMesh = item.mesh;
-
-        if (bbMesh instanceof THREE.Mesh) {
-          const mesh = bbMesh.clone(true);
-
-          mesh.material = material;
-          mesh.geometry = bbMesh.geometry.clone();
-          mesh.geometry.uvsNeedUpdate = true;
-
-          if (bbMesh.parent) {
-            // Ensure the mesh is in the same position as the original and offset by its parent
-            mesh.position.copy(bbMesh.position).add(bbMesh.parent.position);
-            // Apply rotation and origin
-            mesh.rotation.copy(bbMesh.rotation);
-            mesh.scale.copy(bbMesh.scale);
-          }
-
-          meshes.push(mesh);
-        }
-      });
-
-      return meshes;
-    }
-  }
-
-  const createPanelComponent = ({ panelSize, scene }: { panelSize: number, scene: PbrPreviewScene }) => {
-    return Vue.extend({
-      name: "PbrTexturePreview",
-      template: /*html*/ `
-        <div class="pbr-preview">
-          <div ref="canvas" class="pbr-preview__canvas"></div>
-          <button type="button" v-on:click="toggleAnimation">
-            <span v-if="runAnimation">Stop</span>
-            <span v-else>Start</span>
-          </button>
-          <button type="button" v-on:click="updateScene">
-            Reload
-          </button>
-          <button type="button" v-on:click="resetRotation">
-            Reset
-          </button>
-          <label for="zoom">Zoom</label>
-          <input
-            type="range"
-            id="zoom"
-            v-model="zoomLevel"
-            min="1"
-            max="20"
-            step="1"
-          />
-          <p>{{ zoomLevel }}&times;</p>
-          <label for="fov">Field of View</label>
-          <input
-            type="range"
-            id="fov"
-            v-model="fov"
-            min="1"
-            max="180"
-            step="1"
-          />
-          <p>{{ fov }}&deg;</p>
-          <label for="rotationAxis">Rotation Axis</label>
-          <select id="rotationAxis" v-model="rotationAxis">
-            <option value="x">X</option>
-            <option value="y">Y</option>
-            <option value="z">Z</option>
-          </select>
-        </div>
-        <style>
-          .pbr-preview {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-          }
-          .pbr-preview__canvas {
-            width: 100%;
-            height: 100%;
-            max-width: 100%;
-            max-height: 100%;
-            overflow: hidden;
-          }
-        </style>
-      `,
-      data(): {
-        scene: PbrPreviewScene;
-        renderer: THREE.WebGLRenderer | null;
-        canvas: HTMLElement | null;
-        camera: THREE.PerspectiveCamera | null;
-        zoomLevel: number;
-        runAnimation: boolean;
-        fov: number;
-        rotationAxis: "x" | "y" | "z";
-      } {
-        return {
-          scene,
-          renderer: null,
-          canvas: null,
-          camera: null,
-          zoomLevel: 7,
-          runAnimation: true,
-          fov: 75,
-          rotationAxis: "y",
-        };
-      },
-      beforeDestroy() {
-        this.renderer?.dispose();
-      },
-      mounted() {
-        this.renderer = new WebGLRenderer({ antialias: true });
-        this.renderer.setSize(panelSize, panelSize);
-        this.renderer.physicallyCorrectLights = true;
-
-        if (this.$refs.canvas) {
-          this.canvas = (this.$refs.canvas as Element).appendChild(
-            this.renderer.domElement,
-          );
-          this.init();
-        }
-      },
-      methods: {
-        init() {
-          this.setCamera();
-
-          // const controls = new OrbitControls(this.camera, );
-          // controls.target.set(0, 5, 0);
-          // controls.update();
-
-          this.animate();
-        },
-        toggleAnimation() {
-          this.runAnimation = !this.runAnimation;
-
-          if (this.runAnimation) {
-            this.animate();
-          }
-        },
-        updateScene() {
-          this.scene.updateScene();
-        },
-        setCamera() {
-          this.camera = new PerspectiveCamera(this.fov, 1, 0.1, 1000);
-          this.camera.position.z = this.zoomLevel;
-          this.camera.position.y = this.zoomLevel;
-          this.camera.position.x = this.zoomLevel;
-
-          this.camera.lookAt(0, 0, 0);
-        },
-        animate() {
-          if (!this.runAnimation) {
-            return;
-          }
-
-          requestAnimationFrame(this.animate);
-
-          this.scene.scene.rotation[this.rotationAxis] += 0.01;
-          this.render();
-        },
-        resetRotation() {
-          this.scene.scene.rotation.set(0, 0, 0);
-          this.render();
-        },
-        render() {
-          this.renderer?.render(
-            this.scene.scene,
-            this.camera ?? new PerspectiveCamera(),
-          );
-        },
-      },
-      watch: {
-        zoomLevel() {
-          this.setCamera();
-          this.render();
-        },
-        fov() {
-          this.setCamera();
-          this.render();
-        },
-
-      },
-    });
-  };
 
   const createDialogForm = (): DialogOptions["form"] => {
     const options: DialogFormElement["options"] = {
@@ -397,11 +175,6 @@
     });
 
     return {
-      color: {
-        type: "color",
-        label: "Color",
-        value: "#ffffff",
-      },
       albedoMap: {
         label: "Albedo Map",
         description: "Select a file for the albedo channel",
@@ -411,6 +184,12 @@
       normalMap: {
         label: "Normal Map",
         description: "Select a texture for the normal map channel",
+        type: "select",
+        options,
+      },
+      aoMap: {
+        label: "Ambient Occlusion Map",
+        description: "Select a file for the ambient occlusion channel",
         type: "select",
         options,
       },
@@ -441,7 +220,50 @@
     };
   };
 
-  BBPlugin.register("pbr_preview", {
+  const meshMaterials = new Map<string, THREE.Material>();
+
+  const activatePbrPreview = () => {
+    preview = new Preview({
+      id: `${PLUGIN_ID}.preview`,
+      antialias: true,
+    });
+
+    // Project.view_mode = "textured";
+
+    if (Preview.selected) {
+      preview.copyView(Preview.selected)
+    }
+    
+    preview.renderer.physicallyCorrectLights = true;
+
+    const envMap = PreviewScene.active?.cubemap ?? null;
+
+    const material = PbrMaterial.getMaterial({
+      envMap,
+    });
+
+    Outliner.elements.forEach((item) => {
+      const mesh = item.getMesh();
+      meshMaterials.set(mesh.uuid, mesh.material);
+      mesh.material = material;
+    });
+
+    preview.fullscreen();
+  };
+
+  const deactivatePbrPreview = () => {
+    Outliner.elements.forEach((item) => {
+      const mesh = item.getMesh();
+
+      if (meshMaterials.has(mesh.uuid)) {
+        mesh.material = meshMaterials[mesh.uuid];
+      }
+    });
+
+    Canvas.updateAll();
+  };
+
+  BBPlugin.register(PLUGIN_ID, {
     title: "PBR Features",
     author: "Jason J. Gardner",
     description: "Adds PBR features to Blockbench",
@@ -450,59 +272,54 @@
     await_loading: true,
     new_repository_format: true,
     onload() {
-      let panelSize = 600;
-      const scene = new PbrPreviewScene();
-
-      panel = new Panel({
-        id: "threejs_material_viewer",
-        name: "PBR Material Preview",
-        condition: { modes: ["edit", "paint"] },
-        component: createPanelComponent({
-          panelSize,
-          scene,
-        }),
-        toolbars: [],
+      const pbrMode = new Mode(`${PLUGIN_ID}.mode`, {
+        name: "PBR",
         icon: "flare",
-        expand_button: true,
-        default_position: {
-          slot: "bottom",
-          float_position: [0, 0],
-          float_size: [400, 400],
-          height: panelSize,
-          folded: false,
+        onSelect() {
+          activatePbrPreview();
         },
-        default_side: "left",
-        insert_before: "paint",
-        insert_after: "uv",
-        onResize() {},
-        onFold() {},
-        display_condition: {
-          modes: ["edit", "paint"],
-          project: true,
+        onUnselect() {
+          deactivatePbrPreview();
         },
+        selectElements: false,
+      });
+
+      BARS.defineActions(() => {
+        new Action(`${PLUGIN_ID}.enable_pbr_mode`, {
+          name: "PBR Mode",
+          icon: "flare",
+          click() {
+            pbrMode.select();
+          },
+        });
       });
 
       dialogElement = new Dialog("pbr.dialog", {
         title: "PBR Channels",
         id: "pbr_dialog",
+        // TODO: Recreate with project change
         form: createDialogForm() ?? {},
         onConfirm(formResult) {
-          PbrMaterial.saveTexture("albedo", formResult.albedoMap);
-          PbrMaterial.saveTexture("normal", formResult.normalMap);
-          PbrMaterial.saveTexture("heightmap", formResult.heightMap);
-          PbrMaterial.saveTexture("roughness", formResult.roughnessMap);
-          PbrMaterial.saveTexture("metalness", formResult.metalnessMap);
-          PbrMaterial.saveTexture("emissive", formResult.emissiveMap);
-          scene.updateScene();
+          [
+            "albedo",
+            "normal",
+            "height",
+            "roughness",
+            "metalness",
+            "emissive",
+            "ao",
+          ].forEach((channel) => {
+            const value = (formResult as Record<string, string>)[
+              `${channel}Map`
+            ];
+            if (!value || value === NA_CHANNEL) {
+              PbrMaterial.removeTexture(channel);
+              return;
+            }
+
+            PbrMaterial.saveTexture(channel, value);
+          });
         },
-        // sidebar: {
-        //   pages: {
-        //     normalMap: {
-        //       icon: "altitude",
-        //       label: "Normal Map",
-        //     }
-        //   },
-        // }
       });
 
       dialogBtn = new Action("pbr.show_dialog", {
@@ -531,7 +348,8 @@
     onunload() {
       dialogBtn?.delete();
       dialogElement?.delete();
-      panel?.delete();
+      preview?.delete();
+      meshMaterials.clear();
       if (isApp) {
         sendToSubstanceAction.delete();
       }
