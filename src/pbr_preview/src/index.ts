@@ -5,6 +5,14 @@
  */
 /// <reference types="three" />
 /// <reference path="../../../types/index.d.ts" />
+
+interface IChannel {
+  label: string;
+  description: string;
+  map: string;
+  id: string;
+}
+
 (() => {
   const { MeshStandardMaterial } = THREE;
 
@@ -12,9 +20,57 @@
   let dialogBtn: Action;
   let dialogElement: Dialog;
   let preview: Preview;
+  let pbrMode: Mode;
+  let displaySettingsPanel: Panel;
+  let materialPanel: Panel;
+  let styles: Deletable;
 
   const NA_CHANNEL = "_NONE_";
   const PLUGIN_ID = "pbr_preview";
+  const CHANNELS: Record<string, IChannel> = {
+    albedo: {
+      id: "albedo",
+      label: "Albedo",
+      description: "The color of the material",
+      map: "map",
+    },
+    normal: {
+      id: "normal",
+      label: "Normal",
+      description: "The material's normal map",
+      map: "normalMap",
+    },
+    ao: {
+      id: "ao",
+      label: "Ambient Occlusion",
+      description: "The material's ambient occlusion map",
+      map: "aoMap",
+    },
+    height: {
+      id: "height",
+      label: "Height",
+      description: "The material's height map",
+      map: "bumpMap",
+    },
+    roughness: {
+      id: "roughness",
+      label: "Roughness",
+      description: "The material's roughness map",
+      map: "roughnessMap",
+    },
+    metalness: {
+      id: "metalness",
+      label: "Metalness",
+      description: "The material's metalness map",
+      map: "metalnessMap",
+    },
+    emissive: {
+      id: "emissive",
+      label: "Emissive",
+      description: "The material's emissive map",
+      map: "emissiveMap",
+    },
+  };
 
   class PbrMaterial {
     static getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
@@ -70,18 +126,24 @@
       );
     }
 
-    static getTexture(name: string) {
+    static findTexture(name: string): Texture | null {
       const projectsJson = localStorage.getItem("pbr_textures");
       const projects = projectsJson ? JSON.parse(projectsJson) : {};
 
       const projectData = projects[Project.uuid] ?? {};
 
       const filenameRegex = new RegExp(`_${name}(\.[^.]+)?$`, "i");
-      const src = Project.textures?.find(
-        (t: Texture) =>
-          projectData[name] === t.uuid ||
-          (filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL),
+      return (
+        Project.textures?.find(
+          (t: Texture) =>
+            projectData[name] === t.uuid ||
+            (filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL),
+        ) ?? null
       );
+    }
+
+    static getTexture(name: string) {
+      const src = PbrMaterial.findTexture(name);
 
       if (!src) {
         return null;
@@ -159,109 +221,205 @@
     }
   }
 
-  const createDialogForm = (): DialogOptions["form"] => {
-    const options: DialogFormElement["options"] = {
-      [NA_CHANNEL]: "None",
-    };
-
-    Project.textures?.forEach((texture: Texture | any) => {
-      if (!(texture instanceof Texture)) {
-        return;
-      }
-
-      if (texture.name && texture.name.length > 0) {
-        options[texture.uuid] = texture.name;
-      }
+  const createDisplaySettingsPanel = ({ preview }: { preview: Preview }) => {
+    return Vue.extend({
+      name: "DisplaySettingsPanel",
+      template: /*html*/ `
+        <div>
+          <div class="form-group">
+            <label for="exposure">Exposure</label>
+            <input
+              type="number"
+              id="exposure"
+              v-model="exposure"
+              @change="updateExposure"
+            />
+          </div>
+        </div>
+      `,
+      data() {
+        return {
+          exposure: 1,
+        };
+      },
+      methods: {
+        updateExposure() {
+          preview.renderer.toneMappingExposure = this.exposure;
+          preview.render();
+        },
+      },
     });
-
-    return {
-      albedoMap: {
-        label: "Albedo Map",
-        description: "Select a file for the albedo channel",
-        type: "select",
-        options,
-      },
-      normalMap: {
-        label: "Normal Map",
-        description: "Select a texture for the normal map channel",
-        type: "select",
-        options,
-      },
-      aoMap: {
-        label: "Ambient Occlusion Map",
-        description: "Select a file for the ambient occlusion channel",
-        type: "select",
-        options,
-      },
-      heightMap: {
-        label: "Height Map",
-        description: "Select a file for the heightmap/bump map channel",
-        type: "select",
-        options,
-      },
-      roughnessMap: {
-        label: "Roughness Map",
-        description: "Select a file for the roughness channel",
-        type: "select",
-        options,
-      },
-      metalnessMap: {
-        label: "Metalness Map",
-        description: "Select a file for the metallic channel",
-        type: "select",
-        options,
-      },
-      emissiveMap: {
-        label: "Emissive Map",
-        description: "Select a file for the emissive channel",
-        type: "select",
-        options,
-      },
-    };
   };
 
-  const meshMaterials = new Map<string, THREE.Material>();
+  const createMaterialPanel = ({
+    preview,
+    activate,
+    deactivate,
+  }: PbrPreview) => {
+    const ChannelButton = Vue.extend({
+      name: "ChannelButton",
+      props: {
+        channel: Object,
+      },
+      template: /*html*/ `
+        <div class="channel-button">
+          <div v-if="selectedTexture" class="channel-texture">
+            <img class="channel-texture__image" :src="selectedTexture.img.src" :alt="selectedTexture.uuid" width="64" height="64" />
+            <div class="channel-texture__description">
+              <h4 class="channel-texture__title">{{ channel.label }}</h4>
+              <h5 class="channel-texture__name">{{ selectedTexture.name.trim() }}</h5>
+            </div>
+            <button class="channel-texture__clear" type="button" title="Clear channel" @click="unsetTexture">
+              <i class="material-icons">clear</i>
+            </button>
+          </div>
+          <div v-else class="channel-unassigned">
+            <label :for="assignId(channel.label)">{{ channel.label }}</label>
+            <select :id="assignId(channel.label)" @change="setTexture">
+              <option>Select {{ channel.label }}</option>
+              <option v-for="texture in projectTextures" :value="texture.uuid">{{ texture.name }}</option>
+            </select>
+          </div>
+        </div>
+      `,
+      data(): {
+        selectedTexture: Texture | null;
+        projectTextures: Array<Texture>;
+      } {
+        return {
+          selectedTexture: null,
+          projectTextures: [],
+        };
+      },
+      mounted() {
+        this.projectTextures = Project.textures ?? Texture.all;
+        this.selectedTexture = PbrMaterial.findTexture(this.channel.id);
+      },
+      methods: {
+        assignId(label: string) {
+          return `channel_${label.toLowerCase().replace(/\s/g, "-")}`;
+        },
+        setTexture(event: Event) {
+          const texture = this.projectTextures.find(
+            (t: Texture) =>
+              t.uuid === (event.target as HTMLSelectElement).value,
+          );
 
-  const activatePbrPreview = () => {
-    preview = new Preview({
-      id: `${PLUGIN_ID}.preview`,
-      antialias: true,
+          if (!texture) {
+            return;
+          }
+
+          PbrMaterial.saveTexture(this.channel.id, texture.uuid);
+          this.selectedTexture = texture;
+          activate({
+            [this.channel.map]: new THREE.CanvasTexture(texture.canvas),
+          });
+          preview.render();
+        },
+        unsetTexture() {
+          PbrMaterial.saveTexture(this.channel.id, NA_CHANNEL);
+          this.selectedTexture = null;
+          preview.render();
+        },
+      },
     });
 
-    // Project.view_mode = "textured";
+    return Vue.extend({
+      name: "MaterialPanel",
+      components: {
+        ChannelButton,
+      },
+      template: /*html*/ `
+        <div>
+          <div v-for="(channel, key) in channels" :key="key">
+            <ChannelButton :channel="channel" />
+          </div>
+        </div>
+      `,
+      data(): {
+        textures: Array<string>;
+        channels: Record<string, IChannel>;
+      } {
+        return {
+          textures: [],
+          channels: CHANNELS,
+        };
+      },
+      mounted() {
+        this.textures = Texture.all.map((texture: Texture) => texture.uuid);
+      },
+      methods: {},
+      watch: {},
+    });
+  };
 
-    if (Preview.selected) {
-      preview.copyView(Preview.selected)
+  class PbrPreview {
+    preview: Preview;
+    private _active: boolean = false;
+
+    constructor() {
+      this.preview = new Preview({
+        id: `${PLUGIN_ID}.preview`,
+        antialias: true,
+      });
+
+      if (Preview.selected) {
+        this.preview.copyView(Preview.selected);
+      }
+
+      this.preview.renderer.physicallyCorrectLights = true;
     }
-    
-    preview.renderer.physicallyCorrectLights = true;
 
-    const envMap = PreviewScene.active?.cubemap ?? null;
+    activate(extendMaterial?: THREE.MeshStandardMaterialParameters) {
+      const envMap = PreviewScene.active?.cubemap ?? null;
+      const material = PbrMaterial.getMaterial({
+        envMap,
+        ...extendMaterial,
+      });
 
-    const material = PbrMaterial.getMaterial({
-      envMap,
-    });
+      Outliner.elements.forEach((item) => {
+        const mesh = item.getMesh();
 
-    Outliner.elements.forEach((item) => {
-      const mesh = item.getMesh();
-      meshMaterials.set(mesh.uuid, mesh.material);
-      mesh.material = material;
-    });
+        mesh.material = material;
+        mesh.material.needsUpdate = true;
+      });
 
-    preview.fullscreen();
-  };
-
-  const deactivatePbrPreview = () => {
-    Outliner.elements.forEach((item) => {
-      const mesh = item.getMesh();
-
-      if (meshMaterials.has(mesh.uuid)) {
-        mesh.material = meshMaterials[mesh.uuid];
+      if (!this._active) {
+        Preview.selected = this.preview;
+        this._active = true;
       }
-    });
 
-    Canvas.updateAll();
-  };
+      this.preview.render();
+    }
+
+    deactivate() {
+      // Outliner.elements.forEach((item) => {
+      //   const mesh = item.getMesh();
+
+      //   if (this.meshMaterials.has(mesh.uuid)) {
+      //     mesh.material = this.meshMaterials.get(mesh.uuid);
+      //   }
+      // });
+
+      Canvas.updateAll();
+    }
+
+    get active() {
+      return this._active;
+    }
+
+    set active(value: boolean) {
+      if (!this._active && value) {
+        this.activate();
+      }
+
+      if (this._active && !value) {
+        this.deactivate();
+      }
+
+      this._active = value;
+    }
+  }
 
   BBPlugin.register(PLUGIN_ID, {
     title: "PBR Features",
@@ -272,66 +430,171 @@
     await_loading: true,
     new_repository_format: true,
     onload() {
-      const pbrMode = new Mode(`${PLUGIN_ID}.mode`, {
+      const pbrPreview = new PbrPreview();
+
+      styles = Blockbench.addCSS(/*css*/ `
+        .channel-button {
+          display: flex;
+          background-color: var(--color-dark);
+          border: 2px solid var(--color-button);
+          border-radius: 5px;
+          margin: 0 .5rem 1rem;
+          padding: 0.5rem;
+          align-items: stretch;
+          justify-content: space-between;
+        }
+
+        .channel-button > button {
+          justify-self: stretch;
+          width: 100%;
+          white-space: nowrap;
+        }
+
+        .channel-texture {
+          display: flex;
+          flex-direction: row;
+          flex-grow: 1;
+          flex-wrap: nowrap;
+          overflow: hidden;
+          position: relative;
+          width: 100%;
+        }
+
+        .channel-texture__clear {
+          background: none;
+          border-radius: 5px;
+          border: none;
+          color: var(--color-text);
+          cursor: pointer;
+          flex-grow: 1;
+          font-size: 1rem;
+          max-width: 1rem;
+          min-width: fit-content;
+          padding: 0;
+          position: absolute;
+          right: 0;
+          top: 0;
+        }
+
+        .channel-texture__title {
+          font-size: 1rem;
+          font-weight: bold;
+          margin: 0;
+        }
+
+        .channel-texture__description {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          padding: 0 0.5rem;
+        }
+
+        .channel-texture__image {
+          background-color: var(--color-dark);
+          border: 1px solid var(--color-button);
+          border-radius: 4px;
+          image-rendering: pixelated;
+        }
+
+        .channel-texture__name {
+          flex: 1;
+          font-size: 0.825rem;
+          margin: auto 0 0;
+          overflow: hidden;
+          padding: 0;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .channel-unassigned {
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+          justify-content: center;
+          text-align: center;
+        }
+
+        .channel-unassigned > label {
+          border-bottom: 1px solid var(--color-button);
+          font-size: 1rem;
+          font-weight: bold;
+          margin: 0 0 0.5rem;
+          padding: 0 0 0.5rem;
+        }
+
+        .channel-unassigned > select {
+          background-color: var(--color-button);
+          border: 1px solid var(--color-dark);
+          border-radius: 5px;
+          color: var(--color-text);
+        }
+      `);
+
+      pbrMode = new Mode(`${PLUGIN_ID}_mode`, {
         name: "PBR",
         icon: "flare",
         onSelect() {
-          activatePbrPreview();
+          pbrPreview.activate();
+          pbrPreview.preview.fullscreen();
+          displaySettingsPanel = new Panel(`${PLUGIN_ID}.display_settings`, {
+            name: "Display Settings",
+            id: `${PLUGIN_ID}.display_settings_panel`,
+            icon: "display_settings",
+            toolbars: [],
+            display_condition: {
+              modes: [`${PLUGIN_ID}_mode`],
+              project: true,
+            },
+            component: createDisplaySettingsPanel({
+              preview,
+            }),
+            expand_button: true,
+            onFold() {},
+            onResize() {},
+            default_side: "right",
+            default_position: {
+              slot: "right_bar",
+              float_position: [0, 0],
+              float_size: [400, 500],
+              height: 300,
+              folded: false,
+            },
+            insert_after: "uv",
+            insert_before: "paint",
+          });
+
+          materialPanel = new Panel(`${PLUGIN_ID}.material`, {
+            name: "Material",
+            id: `${PLUGIN_ID}.material_panel`,
+            icon: "stacks",
+            toolbars: [],
+            display_condition: {
+              modes: [`${PLUGIN_ID}_mode`],
+              project: true,
+            },
+            component: createMaterialPanel(pbrPreview),
+            expand_button: true,
+            onFold() {},
+            onResize() {},
+            default_side: "left",
+            default_position: {
+              slot: "left_bar",
+              float_position: [0, 0],
+              float_size: [400, 500],
+              height: 600,
+              folded: false,
+            },
+            insert_after: `${PLUGIN_ID}.display_settings`,
+            insert_before: "",
+          });
         },
         onUnselect() {
-          deactivatePbrPreview();
+          pbrPreview.deactivate();
+          displaySettingsPanel?.delete();
+          materialPanel?.delete();
         },
         selectElements: false,
       });
-
-      BARS.defineActions(() => {
-        new Action(`${PLUGIN_ID}.enable_pbr_mode`, {
-          name: "PBR Mode",
-          icon: "flare",
-          click() {
-            pbrMode.select();
-          },
-        });
-      });
-
-      dialogElement = new Dialog("pbr.dialog", {
-        title: "PBR Channels",
-        id: "pbr_dialog",
-        // TODO: Recreate with project change
-        form: createDialogForm() ?? {},
-        onConfirm(formResult) {
-          [
-            "albedo",
-            "normal",
-            "height",
-            "roughness",
-            "metalness",
-            "emissive",
-            "ao",
-          ].forEach((channel) => {
-            const value = (formResult as Record<string, string>)[
-              `${channel}Map`
-            ];
-            if (!value || value === NA_CHANNEL) {
-              PbrMaterial.removeTexture(channel);
-              return;
-            }
-
-            PbrMaterial.saveTexture(channel, value);
-          });
-        },
-      });
-
-      dialogBtn = new Action("pbr.show_dialog", {
-        name: "Add PBR",
-        icon: "flare",
-        description: "Show PBR options",
-        click: () => {
-          dialogElement.show();
-        },
-      });
-
-      MenuBar.addAction(dialogBtn, "tools.pbr");
 
       if (isApp) {
         sendToSubstanceAction = new Action("pbr.send_to_substance", {
@@ -349,9 +612,12 @@
       dialogBtn?.delete();
       dialogElement?.delete();
       preview?.delete();
-      meshMaterials.clear();
+      pbrMode?.delete();
+      displaySettingsPanel?.delete();
+      materialPanel?.delete();
+      styles?.delete();
       if (isApp) {
-        sendToSubstanceAction.delete();
+        sendToSubstanceAction?.delete();
       }
     },
   });
