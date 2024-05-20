@@ -94,15 +94,31 @@ interface IChannel {
       });
     }
 
+    static projectId() {
+      return Project.saved_path ?? Project.model_identifier ?? Project.uuid ?? "default";
+    }
+
+    static getProjectsData() {
+      const projectsJson = localStorage.getItem("pbr_textures");
+      return projectsJson ? JSON.parse(projectsJson) : {};
+    }
+
+    static getProjectData() {
+      const id = PbrMaterial.projectId();
+      const projects = PbrMaterial.getProjectsData();
+      return projects[id] ?? {};
+    }
+
     static saveTexture(name: string, src: string) {
+      const projects = PbrMaterial.getProjectsData();
+      const id = PbrMaterial.projectId();
+
       localStorage.setItem(
         "pbr_textures",
         JSON.stringify({
-          ...JSON.parse(localStorage.getItem("pbr_textures") ?? "{}"),
-          [Project.uuid]: {
-            ...JSON.parse(localStorage.getItem("pbr_textures") ?? "{}")[
-              Project.uuid
-            ],
+          ...projects,
+          [id]: {
+            ...projects[id],
             [name]: src,
           },
         }),
@@ -110,10 +126,9 @@ interface IChannel {
     }
 
     static removeTexture(name: string) {
-      const projectsJson = localStorage.getItem("pbr_textures");
-      const projects = projectsJson ? JSON.parse(projectsJson) : {};
-
-      const projectData = projects[Project.uuid] ?? {};
+      const id = PbrMaterial.projectId();
+      const projects = PbrMaterial.getProjectsData();
+      const projectData = PbrMaterial.getProjectData();
 
       delete projectData[name];
 
@@ -121,16 +136,13 @@ interface IChannel {
         "pbr_textures",
         JSON.stringify({
           ...projects,
-          [Project.uuid]: projectData,
+          [id]: projectData,
         }),
       );
     }
 
     static findTexture(name: string): Texture | null {
-      const projectsJson = localStorage.getItem("pbr_textures");
-      const projects = projectsJson ? JSON.parse(projectsJson) : {};
-
-      const projectData = projects[Project.uuid] ?? {};
+      const projectData = PbrMaterial.getProjectData();
 
       const filenameRegex = new RegExp(`_${name}(\.[^.]+)?$`, "i");
       return (
