@@ -19,7 +19,7 @@ interface IChannel {
   let sendToSubstanceAction: Action;
   let dialogBtn: Action;
   let dialogElement: Dialog;
-  let preview: Preview;
+  let pbrPreview: PbrPreview;
   let pbrMode: Mode;
   let displaySettingsPanel: Panel;
   let materialPanel: Panel;
@@ -222,40 +222,60 @@ interface IChannel {
   }
 
   const createDisplaySettingsPanel = ({ preview }: { preview: Preview }) => {
+  const createDisplaySettingsPanel = () => {
     return Vue.extend({
       name: "DisplaySettingsPanel",
       template: /*html*/ `
         <div>
           <div class="form-group">
+            <label for="toneMapping">Tone Mapping</label>
+            <select
+              id="toneMapping"
+              v-model="Preview.selected.renderer.toneMapping"
+              @change="setTonemapping"
+            >
+              <option :value="THREE.NoToneMapping">None</option>
+              <option :value="THREE.LinearToneMapping">Linear</option>
+              <option :value="THREE.ReinhardToneMapping">Reinhard</option>
+              <option :value="THREE.CineonToneMapping">Cineon</option>
+              <option :value="THREE.ACESFilmicToneMapping">ACES Filmic</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="exposure">Exposure</label>
             <input
               type="number"
               id="exposure"
-              v-model="exposure"
-              @change="updateExposure"
+              v-model="Preview.selected.renderer.toneMappingExposure"
+              step="0.1"
             />
+          </div>
+          <div class="form-group">
+            <label for="correctLights">Correct Lights</label>
+            <input type="checkbox" id="correctLights" v-model="Preview.selected.renderer.physicallyCorrectLights" @change="setCorrectLights" />
           </div>
         </div>
       `,
-      data() {
-        return {
-          exposure: 1,
-        };
+      data(): {} {
+        return {};
       },
+      mounted() {},
       methods: {
-        updateExposure() {
-          preview.renderer.toneMappingExposure = this.exposure;
-          preview.render();
+        setTonemapping(event: Event) {
+          const toneMapping = (event.target as HTMLSelectElement).value;
+          Preview.selected.renderer.toneMapping = Number(
+            toneMapping,
+          ) as THREE.ToneMapping;
+        },
+        setCorrectLights(event: Event) {
+          const correctLights = (event.target as HTMLInputElement).checked;
+          Preview.selected.renderer.physicallyCorrectLights = correctLights;
         },
       },
     });
   };
 
-  const createMaterialPanel = ({
-    preview,
-    activate,
-    deactivate,
-  }: PbrPreview) => {
+  const createMaterialPanel = ({ activate }: PbrPreview) => {
     const ChannelButton = Vue.extend({
       name: "ChannelButton",
       props: {
@@ -314,7 +334,6 @@ interface IChannel {
           activate({
             [this.channel.map]: new THREE.CanvasTexture(texture.canvas),
           });
-          preview.render();
         },
         unsetTexture() {
           PbrMaterial.saveTexture(this.channel.id, NA_CHANNEL);
@@ -322,7 +341,6 @@ interface IChannel {
           activate({
             [this.channel.map]: null,
           });
-          preview.render();
         },
       },
     });
@@ -357,20 +375,17 @@ interface IChannel {
   };
 
   class PbrPreview {
-    preview: Preview;
-    private _active: boolean = false;
+    // preview: Preview;
 
     constructor() {
-      this.preview = new Preview({
-        id: `${PLUGIN_ID}.preview`,
-        antialias: true,
-      });
-
-      if (Preview.selected) {
-        this.preview.copyView(Preview.selected);
-      }
-
-      this.preview.renderer.physicallyCorrectLights = true;
+      // this.preview = new Preview({
+      //   id: `${PLUGIN_ID}.preview`,
+      //   antialias: true,
+      // });
+      // if (Preview.selected) {
+      //   this.preview.copyView(Preview.selected);
+      // }
+      // this.preview.renderer.physicallyCorrectLights = true;
     }
 
     activate(extendMaterial?: THREE.MeshStandardMaterialParameters) {
@@ -384,15 +399,15 @@ interface IChannel {
         const mesh = item.getMesh();
 
         mesh.material = material;
-        mesh.material.needsUpdate = true;
+        // mesh.material.needsUpdate = true;
       });
 
-      if (!this._active) {
-        Preview.selected = this.preview;
-        this._active = true;
-      }
+      Preview.selected.renderer.toneMapping = THREE.LinearToneMapping;
+      Preview.selected.renderer.physicallyCorrectLights = true;
 
-      this.preview.render();
+      // Preview.selected = this.preview;
+
+      // Canvas.pbrMaterial = material;
     }
 
     deactivate() {
@@ -403,24 +418,7 @@ interface IChannel {
       //     mesh.material = this.meshMaterials.get(mesh.uuid);
       //   }
       // });
-
       Canvas.updateAll();
-    }
-
-    get active() {
-      return this._active;
-    }
-
-    set active(value: boolean) {
-      if (!this._active && value) {
-        this.activate();
-      }
-
-      if (this._active && !value) {
-        this.deactivate();
-      }
-
-      this._active = value;
     }
   }
 
@@ -433,7 +431,7 @@ interface IChannel {
     await_loading: true,
     new_repository_format: true,
     onload() {
-      const pbrPreview = new PbrPreview();
+      pbrPreview = new PbrPreview();
 
       styles = Blockbench.addCSS(/*css*/ `
         .channel-button {
@@ -537,8 +535,11 @@ interface IChannel {
         name: "PBR",
         icon: "flare",
         onSelect() {
+          Project.view_mode = "pbr";
           pbrPreview.activate();
-          pbrPreview.preview.fullscreen();
+
+          Blockbench.on("select_preview_scene", () => pbrPreview.activate());
+
           displaySettingsPanel = new Panel(`${PLUGIN_ID}.display_settings`, {
             name: "Display Settings",
             id: `${PLUGIN_ID}.display_settings_panel`,
@@ -548,9 +549,7 @@ interface IChannel {
               modes: [`${PLUGIN_ID}_mode`],
               project: true,
             },
-            component: createDisplaySettingsPanel({
-              preview,
-            }),
+            component: createDisplaySettingsPanel(),
             expand_button: true,
             onFold() {},
             onResize() {},
@@ -614,7 +613,6 @@ interface IChannel {
     onunload() {
       dialogBtn?.delete();
       dialogElement?.delete();
-      preview?.delete();
       pbrMode?.delete();
       displaySettingsPanel?.delete();
       materialPanel?.delete();
