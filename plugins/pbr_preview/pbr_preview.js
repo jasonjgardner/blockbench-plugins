@@ -6,7 +6,7 @@
     let sendToSubstanceAction;
     let dialogBtn;
     let dialogElement;
-    let preview;
+    let pbrPreview;
     let pbrMode;
     let displaySettingsPanel;
     let materialPanel;
@@ -159,7 +159,7 @@
         };
       }
     }
-    const createDisplaySettingsPanel = ({ preview: preview2 }) => {
+    const createDisplaySettingsPanel = ({ activate }) => {
       return Vue.extend({
         name: "DisplaySettingsPanel",
         template: (
@@ -167,35 +167,78 @@
           `
         <div>
           <div class="form-group">
+            <label for="toneMapping">Tone Mapping</label>
+            <select
+              id="toneMapping"
+              v-model="toneMapping"
+            >
+              <option :value="THREE.NoToneMapping">None</option>
+              <option :value="THREE.LinearToneMapping">Linear</option>
+              <option :value="THREE.ReinhardToneMapping">Reinhard</option>
+              <option :value="THREE.CineonToneMapping">Cineon</option>
+              <option :value="THREE.ACESFilmicToneMapping">ACES Filmic</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label for="exposure">Exposure</label>
             <input
-              type="number"
-              id="exposure"
+              type="range"
+              id="exposure_range"
               v-model="exposure"
-              @change="updateExposure"
+              step="0.01"
+              min="-2"
+              max="2"
+              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
             />
+            <input
+              type="number"
+              id="exposure_input"
+              v-model="exposure"
+              step="0.01"
+              min="-2"
+              max="2"
+              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
+            />
+          </div>
+          <div class="form-group">
+            <label for="correctLights">Correct Lights</label>
+            <input type="checkbox" id="correctLights" v-model="correctLights" />
           </div>
         </div>
       `
         ),
         data() {
           return {
-            exposure: 1
+            toneMapping: Preview.selected.renderer.toneMapping,
+            exposure: Preview.selected.renderer.toneMappingExposure,
+            correctLights: Preview.selected.renderer.physicallyCorrectLights
           };
         },
-        methods: {
-          updateExposure() {
-            preview2.renderer.toneMappingExposure = this.exposure;
-            preview2.render();
+        watch: {
+          toneMapping: {
+            handler(value) {
+              Preview.selected.renderer.toneMapping = value;
+              activate();
+            },
+            immediate: true
+          },
+          correctLights: {
+            handler(value) {
+              Preview.selected.renderer.physicallyCorrectLights = value;
+              activate();
+            },
+            immediate: true
+          },
+          exposure: {
+            handler(value) {
+              Preview.selected.renderer.toneMappingExposure = value;
+            },
+            immediate: true
           }
         }
       });
     };
-    const createMaterialPanel = ({
-      preview: preview2,
-      activate,
-      deactivate
-    }) => {
+    const createMaterialPanel = ({ activate }) => {
       const ChannelButton = Vue.extend({
         name: "ChannelButton",
         props: {
@@ -251,7 +294,6 @@
             activate({
               [this.channel.map]: new THREE.CanvasTexture(texture.canvas)
             });
-            preview2.render();
           },
           unsetTexture() {
             PbrMaterial.saveTexture(this.channel.id, NA_CHANNEL);
@@ -259,7 +301,6 @@
             activate({
               [this.channel.map]: null
             });
-            preview2.render();
           }
         }
       });
@@ -292,17 +333,6 @@
       });
     };
     class PbrPreview {
-      constructor() {
-        this._active = false;
-        this.preview = new Preview({
-          id: `${PLUGIN_ID}.preview`,
-          antialias: true
-        });
-        if (Preview.selected) {
-          this.preview.copyView(Preview.selected);
-        }
-        this.preview.renderer.physicallyCorrectLights = true;
-      }
       activate(extendMaterial) {
         const envMap = PreviewScene.active?.cubemap ?? null;
         const material = PbrMaterial.getMaterial({
@@ -312,28 +342,10 @@
         Outliner.elements.forEach((item) => {
           const mesh = item.getMesh();
           mesh.material = material;
-          mesh.material.needsUpdate = true;
         });
-        if (!this._active) {
-          Preview.selected = this.preview;
-          this._active = true;
-        }
-        this.preview.render();
       }
       deactivate() {
         Canvas.updateAll();
-      }
-      get active() {
-        return this._active;
-      }
-      set active(value) {
-        if (!this._active && value) {
-          this.activate();
-        }
-        if (this._active && !value) {
-          this.deactivate();
-        }
-        this._active = value;
       }
     }
     BBPlugin.register(PLUGIN_ID, {
@@ -345,7 +357,7 @@
       await_loading: true,
       new_repository_format: true,
       onload() {
-        const pbrPreview = new PbrPreview();
+        pbrPreview = new PbrPreview();
         styles = Blockbench.addCSS(
           /*css*/
           `
@@ -450,8 +462,9 @@
           name: "PBR",
           icon: "flare",
           onSelect() {
+            Project.view_mode = "pbr";
             pbrPreview.activate();
-            pbrPreview.preview.fullscreen();
+            Blockbench.on("select_preview_scene", () => pbrPreview.activate());
             displaySettingsPanel = new Panel(`${PLUGIN_ID}.display_settings`, {
               name: "Display Settings",
               id: `${PLUGIN_ID}.display_settings_panel`,
@@ -461,9 +474,7 @@
                 modes: [`${PLUGIN_ID}_mode`],
                 project: true
               },
-              component: createDisplaySettingsPanel({
-                preview
-              }),
+              component: createDisplaySettingsPanel(pbrPreview),
               expand_button: true,
               onFold() {
               },
@@ -528,7 +539,6 @@
       onunload() {
         dialogBtn?.delete();
         dialogElement?.delete();
-        preview?.delete();
         pbrMode?.delete();
         displaySettingsPanel?.delete();
         materialPanel?.delete();

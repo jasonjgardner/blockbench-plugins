@@ -221,8 +221,7 @@ interface IChannel {
     }
   }
 
-  const createDisplaySettingsPanel = ({ preview }: { preview: Preview }) => {
-  const createDisplaySettingsPanel = () => {
+  const createDisplaySettingsPanel = ({ activate }: PbrPreview) => {
     return Vue.extend({
       name: "DisplaySettingsPanel",
       template: /*html*/ `
@@ -231,8 +230,7 @@ interface IChannel {
             <label for="toneMapping">Tone Mapping</label>
             <select
               id="toneMapping"
-              v-model="Preview.selected.renderer.toneMapping"
-              @change="setTonemapping"
+              v-model="toneMapping"
             >
               <option :value="THREE.NoToneMapping">None</option>
               <option :value="THREE.LinearToneMapping">Linear</option>
@@ -244,32 +242,62 @@ interface IChannel {
           <div class="form-group">
             <label for="exposure">Exposure</label>
             <input
+              type="range"
+              id="exposure_range"
+              v-model="exposure"
+              step="0.01"
+              min="-2"
+              max="2"
+              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
+            />
+            <input
               type="number"
-              id="exposure"
-              v-model="Preview.selected.renderer.toneMappingExposure"
-              step="0.1"
+              id="exposure_input"
+              v-model="exposure"
+              step="0.01"
+              min="-2"
+              max="2"
+              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
             />
           </div>
           <div class="form-group">
             <label for="correctLights">Correct Lights</label>
-            <input type="checkbox" id="correctLights" v-model="Preview.selected.renderer.physicallyCorrectLights" @change="setCorrectLights" />
+            <input type="checkbox" id="correctLights" v-model="correctLights" />
           </div>
         </div>
       `,
-      data(): {} {
-        return {};
+      data(): {
+        toneMapping: THREE.ToneMapping;
+        correctLights: boolean;
+        exposure: number;
+      } {
+        return {
+          toneMapping: Preview.selected.renderer.toneMapping,
+          exposure: Preview.selected.renderer.toneMappingExposure,
+          correctLights: Preview.selected.renderer.physicallyCorrectLights,
+        };
       },
-      mounted() {},
-      methods: {
-        setTonemapping(event: Event) {
-          const toneMapping = (event.target as HTMLSelectElement).value;
-          Preview.selected.renderer.toneMapping = Number(
-            toneMapping,
-          ) as THREE.ToneMapping;
+      watch: {
+        toneMapping: {
+          handler(value: THREE.ToneMapping) {
+            Preview.selected.renderer.toneMapping = value;
+            activate();
+          },
+          immediate: true,
         },
-        setCorrectLights(event: Event) {
-          const correctLights = (event.target as HTMLInputElement).checked;
-          Preview.selected.renderer.physicallyCorrectLights = correctLights;
+        correctLights: {
+          handler(value: boolean) {
+            Preview.selected.renderer.physicallyCorrectLights = value;
+            activate();
+          },
+          immediate: true,
+        },
+        exposure: {
+          handler(value: number) {
+            Preview.selected.renderer.toneMappingExposure = value;
+            // activate();
+          },
+          immediate: true,
         },
       },
     });
@@ -375,19 +403,6 @@ interface IChannel {
   };
 
   class PbrPreview {
-    // preview: Preview;
-
-    constructor() {
-      // this.preview = new Preview({
-      //   id: `${PLUGIN_ID}.preview`,
-      //   antialias: true,
-      // });
-      // if (Preview.selected) {
-      //   this.preview.copyView(Preview.selected);
-      // }
-      // this.preview.renderer.physicallyCorrectLights = true;
-    }
-
     activate(extendMaterial?: THREE.MeshStandardMaterialParameters) {
       const envMap = PreviewScene.active?.cubemap ?? null;
       const material = PbrMaterial.getMaterial({
@@ -402,8 +417,8 @@ interface IChannel {
         // mesh.material.needsUpdate = true;
       });
 
-      Preview.selected.renderer.toneMapping = THREE.LinearToneMapping;
-      Preview.selected.renderer.physicallyCorrectLights = true;
+      // Preview.selected.renderer.toneMapping = THREE.LinearToneMapping;
+      // Preview.selected.renderer.physicallyCorrectLights = true;
 
       // Preview.selected = this.preview;
 
@@ -549,7 +564,7 @@ interface IChannel {
               modes: [`${PLUGIN_ID}_mode`],
               project: true,
             },
-            component: createDisplaySettingsPanel(),
+            component: createDisplaySettingsPanel(pbrPreview),
             expand_button: true,
             onFold() {},
             onResize() {},
