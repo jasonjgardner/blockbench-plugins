@@ -256,6 +256,9 @@
           unsetTexture() {
             PbrMaterial.saveTexture(this.channel.id, NA_CHANNEL);
             this.selectedTexture = null;
+            activate({
+              [this.channel.map]: null
+            });
             preview2.render();
           }
         }
