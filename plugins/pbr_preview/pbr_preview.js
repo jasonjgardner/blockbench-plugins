@@ -73,35 +73,47 @@
           ...options
         });
       }
+      static projectId() {
+        return Project.saved_path ?? Project.model_identifier ?? Project.uuid ?? "default";
+      }
+      static getProjectsData() {
+        const projectsJson = localStorage.getItem(`${PLUGIN_ID}.pbr_textures`);
+        return projectsJson ? JSON.parse(projectsJson) : {};
+      }
+      static getProjectData() {
+        const id = PbrMaterial.projectId();
+        const projects = PbrMaterial.getProjectsData();
+        return projects[id] ?? {};
+      }
       static saveTexture(name, src) {
+        const projects = PbrMaterial.getProjectsData();
+        const id = PbrMaterial.projectId();
         localStorage.setItem(
-          "pbr_textures",
+          `${PLUGIN_ID}.pbr_textures`,
           JSON.stringify({
-            ...JSON.parse(localStorage.getItem("pbr_textures") ?? "{}"),
-            [Project.uuid]: {
-              ...JSON.parse(localStorage.getItem("pbr_textures") ?? "{}")[Project.uuid],
+            ...projects,
+            [id]: {
+              ...projects[id],
               [name]: src
             }
           })
         );
       }
       static removeTexture(name) {
-        const projectsJson = localStorage.getItem("pbr_textures");
-        const projects = projectsJson ? JSON.parse(projectsJson) : {};
-        const projectData = projects[Project.uuid] ?? {};
+        const id = PbrMaterial.projectId();
+        const projects = PbrMaterial.getProjectsData();
+        const projectData = PbrMaterial.getProjectData();
         delete projectData[name];
         localStorage.setItem(
-          "pbr_textures",
+          `${PLUGIN_ID}.pbr_textures`,
           JSON.stringify({
             ...projects,
-            [Project.uuid]: projectData
+            [id]: projectData
           })
         );
       }
       static findTexture(name) {
-        const projectsJson = localStorage.getItem("pbr_textures");
-        const projects = projectsJson ? JSON.parse(projectsJson) : {};
-        const projectData = projects[Project.uuid] ?? {};
+        const projectData = PbrMaterial.getProjectData();
         const filenameRegex = new RegExp(`_${name}(.[^.]+)?$`, "i");
         return Project.textures?.find(
           (t) => projectData[name] === t.uuid || filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL
@@ -165,44 +177,54 @@
         template: (
           /*html*/
           `
-        <div>
-          <div class="form-group">
-            <label for="toneMapping">Tone Mapping</label>
-            <select
-              id="toneMapping"
-              v-model="toneMapping"
-            >
-              <option :value="THREE.NoToneMapping">None</option>
-              <option :value="THREE.LinearToneMapping">Linear</option>
-              <option :value="THREE.ReinhardToneMapping">Reinhard</option>
-              <option :value="THREE.CineonToneMapping">Cineon</option>
-              <option :value="THREE.ACESFilmicToneMapping">ACES Filmic</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="exposure">Exposure</label>
-            <input
-              type="range"
-              id="exposure_range"
-              v-model="exposure"
-              step="0.01"
-              min="-2"
-              max="2"
-              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
-            />
-            <input
-              type="number"
-              id="exposure_input"
-              v-model="exposure"
-              step="0.01"
-              min="-2"
-              max="2"
-              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
-            />
-          </div>
-          <div class="form-group">
-            <label for="correctLights">Correct Lights</label>
-            <input type="checkbox" id="correctLights" v-model="correctLights" />
+        <div class="display-settings-panel">
+          <fieldset>
+            <legend>Tone Mapping</legend>
+            <div class="form-group">
+              <label for="toneMapping">Function</label>
+              <select
+                id="toneMapping"
+                v-model="toneMapping"
+              >
+                <option :value="THREE.NoToneMapping">None</option>
+                <option :value="THREE.LinearToneMapping">Linear</option>
+                <option :value="THREE.ReinhardToneMapping">Reinhard</option>
+                <option :value="THREE.CineonToneMapping">Cineon</option>
+                <option :value="THREE.ACESFilmicToneMapping">ACES Filmic</option>
+              </select>
+            </div>
+            <div v-show="toneMapping !== THREE.NoToneMapping" class="form-group">
+              <div class="form-group-row">
+                <label for="exposure_input">Exposure</label>
+                <input
+                  type="number"
+                  id="exposure_input"
+                  v-model="exposure"
+                  step="0.01"
+                  min="-2"
+                  max="2"
+                  :disabled="toneMapping === THREE.NoToneMapping"
+                />
+              </div>
+              <input
+                type="range"
+                id="exposure_range"
+                v-model="exposure"
+                step="0.01"
+                min="-2"
+                max="2"
+                :disabled="toneMapping === THREE.NoToneMapping"
+              />
+            </div>
+            </fieldset>
+            <fieldset>
+              <legend>Lighting</legend>
+
+              <div class="form-group form-group-row">
+                <label for="correctLights">Correct Lights</label>
+                <input type="checkbox" id="correctLights" v-model="correctLights" />
+              </div>
+            </fieldset>
           </div>
         </div>
       `
@@ -321,15 +343,9 @@
         ),
         data() {
           return {
-            textures: [],
             channels: CHANNELS
           };
-        },
-        mounted() {
-          this.textures = Texture.all.map((texture) => texture.uuid);
-        },
-        methods: {},
-        watch: {}
+        }
       });
     };
     class PbrPreview {
@@ -456,13 +472,29 @@
           border-radius: 5px;
           color: var(--color-text);
         }
+
+        .display-settings-panel fieldset {
+          border: 1px solid var(--color-dark);
+          border-radius: 4px;
+        }
+
+        .display-settings-panel .form-group {
+          display: flex;
+          flex-direction: column;
+          margin: 0.5rem;
+        }
+
+        .display-settings-panel .form-group-row {
+          display: flex;
+          flex-direction: row;
+          justify-content: space-between;
+        }
       `
         );
         pbrMode = new Mode(`${PLUGIN_ID}_mode`, {
           name: "PBR",
           icon: "flare",
           onSelect() {
-            Project.view_mode = "pbr";
             pbrPreview.activate();
             Blockbench.on("select_preview_scene", () => pbrPreview.activate());
             displaySettingsPanel = new Panel(`${PLUGIN_ID}.display_settings`, {

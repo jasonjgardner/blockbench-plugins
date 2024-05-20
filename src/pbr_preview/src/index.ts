@@ -95,11 +95,16 @@ interface IChannel {
     }
 
     static projectId() {
-      return Project.saved_path ?? Project.model_identifier ?? Project.uuid ?? "default";
+      return (
+        Project.saved_path ??
+        Project.model_identifier ??
+        Project.uuid ??
+        "default"
+      );
     }
 
     static getProjectsData() {
-      const projectsJson = localStorage.getItem("pbr_textures");
+      const projectsJson = localStorage.getItem(`${PLUGIN_ID}.pbr_textures`);
       return projectsJson ? JSON.parse(projectsJson) : {};
     }
 
@@ -114,7 +119,7 @@ interface IChannel {
       const id = PbrMaterial.projectId();
 
       localStorage.setItem(
-        "pbr_textures",
+        `${PLUGIN_ID}.pbr_textures`,
         JSON.stringify({
           ...projects,
           [id]: {
@@ -133,7 +138,7 @@ interface IChannel {
       delete projectData[name];
 
       localStorage.setItem(
-        "pbr_textures",
+        `${PLUGIN_ID}.pbr_textures`,
         JSON.stringify({
           ...projects,
           [id]: projectData,
@@ -237,44 +242,54 @@ interface IChannel {
     return Vue.extend({
       name: "DisplaySettingsPanel",
       template: /*html*/ `
-        <div>
-          <div class="form-group">
-            <label for="toneMapping">Tone Mapping</label>
-            <select
-              id="toneMapping"
-              v-model="toneMapping"
-            >
-              <option :value="THREE.NoToneMapping">None</option>
-              <option :value="THREE.LinearToneMapping">Linear</option>
-              <option :value="THREE.ReinhardToneMapping">Reinhard</option>
-              <option :value="THREE.CineonToneMapping">Cineon</option>
-              <option :value="THREE.ACESFilmicToneMapping">ACES Filmic</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label for="exposure">Exposure</label>
-            <input
-              type="range"
-              id="exposure_range"
-              v-model="exposure"
-              step="0.01"
-              min="-2"
-              max="2"
-              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
-            />
-            <input
-              type="number"
-              id="exposure_input"
-              v-model="exposure"
-              step="0.01"
-              min="-2"
-              max="2"
-              :disabled="Preview.selected.renderer.toneMapping === THREE.NoToneMapping"
-            />
-          </div>
-          <div class="form-group">
-            <label for="correctLights">Correct Lights</label>
-            <input type="checkbox" id="correctLights" v-model="correctLights" />
+        <div class="display-settings-panel">
+          <fieldset>
+            <legend>Tone Mapping</legend>
+            <div class="form-group">
+              <label for="toneMapping">Function</label>
+              <select
+                id="toneMapping"
+                v-model="toneMapping"
+              >
+                <option :value="THREE.NoToneMapping">None</option>
+                <option :value="THREE.LinearToneMapping">Linear</option>
+                <option :value="THREE.ReinhardToneMapping">Reinhard</option>
+                <option :value="THREE.CineonToneMapping">Cineon</option>
+                <option :value="THREE.ACESFilmicToneMapping">ACES Filmic</option>
+              </select>
+            </div>
+            <div v-show="toneMapping !== THREE.NoToneMapping" class="form-group">
+              <div class="form-group-row">
+                <label for="exposure_input">Exposure</label>
+                <input
+                  type="number"
+                  id="exposure_input"
+                  v-model="exposure"
+                  step="0.01"
+                  min="-2"
+                  max="2"
+                  :disabled="toneMapping === THREE.NoToneMapping"
+                />
+              </div>
+              <input
+                type="range"
+                id="exposure_range"
+                v-model="exposure"
+                step="0.01"
+                min="-2"
+                max="2"
+                :disabled="toneMapping === THREE.NoToneMapping"
+              />
+            </div>
+            </fieldset>
+            <fieldset>
+              <legend>Lighting</legend>
+
+              <div class="form-group form-group-row">
+                <label for="correctLights">Correct Lights</label>
+                <input type="checkbox" id="correctLights" v-model="correctLights" />
+              </div>
+            </fieldset>
           </div>
         </div>
       `,
@@ -307,7 +322,6 @@ interface IChannel {
         exposure: {
           handler(value: number) {
             Preview.selected.renderer.toneMappingExposure = value;
-            // activate();
           },
           immediate: true,
         },
@@ -398,19 +412,12 @@ interface IChannel {
         </div>
       `,
       data(): {
-        textures: Array<string>;
         channels: Record<string, IChannel>;
       } {
         return {
-          textures: [],
           channels: CHANNELS,
         };
       },
-      mounted() {
-        this.textures = Texture.all.map((texture: Texture) => texture.uuid);
-      },
-      methods: {},
-      watch: {},
     });
   };
 
@@ -556,13 +563,29 @@ interface IChannel {
           border-radius: 5px;
           color: var(--color-text);
         }
+
+        .display-settings-panel fieldset {
+          border: 1px solid var(--color-dark);
+          border-radius: 4px;
+        }
+
+        .display-settings-panel .form-group {
+          display: flex;
+          flex-direction: column;
+          margin: 0.5rem;
+        }
+
+        .display-settings-panel .form-group-row {
+          display: flex;
+          flex-direction: row;
+          justify-content: space-between;
+        }
       `);
 
       pbrMode = new Mode(`${PLUGIN_ID}_mode`, {
         name: "PBR",
         icon: "flare",
         onSelect() {
-          Project.view_mode = "pbr";
           pbrPreview.activate();
 
           Blockbench.on("select_preview_scene", () => pbrPreview.activate());
