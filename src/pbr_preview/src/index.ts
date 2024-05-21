@@ -225,9 +225,10 @@ interface IChannel {
       return channelCanvas;
     }
 
-    static decodeMer(): {
+    static decodeMer(emissiveThreshold = 25.5): {
       metalness?: HTMLCanvasElement | null;
       emissive?: HTMLCanvasElement | null;
+      emissiveLevel?: HTMLCanvasElement | null;
       roughness?: HTMLCanvasElement | null;
       sss?: HTMLCanvasElement | null;
     } {
@@ -237,19 +238,79 @@ interface IChannel {
         return {
           metalness: null,
           emissive: null,
+          emissiveLevel: null,
           roughness: null,
           sss: null,
         };
       }
 
       const metalness = PbrMaterial.extractChannel(texture, "r");
-      const emissive = PbrMaterial.extractChannel(texture, "g");
+      const emissiveLevel = PbrMaterial.extractChannel(texture, "g");
       const roughness = PbrMaterial.extractChannel(texture, "b");
       const sss = PbrMaterial.extractChannel(texture, "a");
+
+      // Use emissiveLevel as mask for getting emissive color from albedo channel
+      const albedo = PbrMaterial.findTexture(CHANNELS.albedo.id);
+      const emissive = document.createElement("canvas");
+      emissive.width = albedo?.width ?? texture.width;
+      emissive.height = albedo?.height ?? texture.height;
+
+      const emissiveCtx = emissive.getContext("2d");
+      const emissiveLevelCtx = emissiveLevel?.getContext("2d");
+      const albedoCtx = albedo?.canvas.getContext("2d");
+
+      if (!emissiveCtx || !albedoCtx || !emissiveLevelCtx) {
+        return {
+          metalness,
+          emissive: emissiveLevel,
+          roughness,
+          sss,
+        };
+      }
+
+      // Write the albedo color to the emissive canvas where the emissive level is greater than a certain threshold
+      const albedoData = albedoCtx.getImageData(
+        0,
+        0,
+        emissive.width,
+        emissive.height,
+      );
+      const emissiveLevelData = emissiveLevelCtx.getImageData(
+        0,
+        0,
+        emissive.width,
+        emissive.height,
+      );
+
+      const emissiveData = new Uint8ClampedArray(
+        emissive.width * emissive.height * 4,
+      );
+
+      for (let idx = 0; idx < albedoData.data.length; idx += 4) {
+        if (emissiveLevelData.data[idx] > emissiveThreshold) {
+          emissiveData[idx] = albedoData.data[idx];
+          emissiveData[idx + 1] = albedoData.data[idx + 1];
+          emissiveData[idx + 2] = albedoData.data[idx + 2];
+          emissiveData[idx + 3] = 255;
+          continue;
+        }
+
+        emissiveData[idx] = 0;
+        emissiveData[idx + 1] = 0;
+        emissiveData[idx + 2] = 0;
+        emissiveData[idx + 3] = 255;
+      }
+
+      emissiveCtx.putImageData(
+        new ImageData(emissiveData, emissive.width, emissive.height),
+        0,
+        0,
+      );
 
       return {
         metalness,
         emissive,
+        emissiveLevel,
         roughness,
         sss,
       };
