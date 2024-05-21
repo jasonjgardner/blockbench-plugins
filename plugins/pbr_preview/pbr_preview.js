@@ -4,6 +4,7 @@
   (() => {
     const { MeshStandardMaterial } = THREE;
     let generateMer;
+    let generateNormal;
     let pbrPreview;
     let pbrMode;
     let displaySettingsPanel;
@@ -452,6 +453,80 @@
         Canvas.updateAll();
       }
     }
+    const generateNormalMap = (texture) => {
+      const textureCtx = texture.canvas.getContext("2d");
+      if (!textureCtx) {
+        return;
+      }
+      const { data: textureData } = textureCtx.getImageData(
+        0,
+        0,
+        texture.width,
+        texture.height
+      );
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return;
+      }
+      const width = texture.width;
+      const height = texture.height;
+      const getHeight = (x, y) => {
+        const idx = (x + y * width) * 4;
+        return textureData[idx] / 255;
+      };
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(texture.img, 0, 0, width, height);
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const normalize = (v) => {
+        const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        return [v[0] / length, v[1] / length, v[2] / length];
+      };
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const left = getHeight(Math.max(x - 1, 0), y);
+          const right = getHeight(Math.min(x + 1, width - 1), y);
+          const top = getHeight(x, Math.max(y - 1, 0));
+          const bottom = getHeight(x, Math.min(y + 1, height - 1));
+          const dx = right - left;
+          const dy = bottom - top;
+          const normal = normalize([-dx, -dy, 1]);
+          const idx = (y * width + x) * 4;
+          data[idx] = (normal[0] + 1) / 2 * 255;
+          data[idx + 1] = (normal[1] + 1) / 2 * 255;
+          data[idx + 2] = (normal[2] + 1) / 2 * 255;
+          data[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      const normalMap = new Texture({
+        name: `${texture.name}_normal`,
+        saved: false,
+        particle: false,
+        keep_size: true
+      }).fromDataURL(canvas.toDataURL());
+      if (Project) {
+        Project.textures.push(normalMap);
+      }
+      return normalMap;
+    };
+    generateNormal = new Action(`${PLUGIN_ID}_generate_normal`, {
+      icon: "altitude",
+      name: "Generate Normal Map",
+      description: "Generates a normal map from the height map",
+      click() {
+        const texture = PbrMaterial.findTexture(CHANNELS.height.id) ?? Texture.all.find((t) => t.selected);
+        if (!texture) {
+          return;
+        }
+        const normalMap = generateNormalMap(texture);
+        if (normalMap) {
+          PbrMaterial.saveTexture("normal", normalMap.uuid);
+        }
+      }
+    });
     generateMer = new Action(`${PLUGIN_ID}_create_mer`, {
       icon: "lightbulb_circle",
       name: "Generate MER",
@@ -759,17 +834,6 @@
               insert_after: `${PLUGIN_ID}.display_settings`,
               insert_before: ""
             });
-            MenuBar.addAction(generateMer, "file.export");
-            MenuBar.addAction(
-              new Action(`${PLUGIN_ID}_create_texture_set`, {
-                name: "Create Texture Set JSON",
-                icon: "flare",
-                click() {
-                  createTextureSetDialog();
-                }
-              }),
-              "file.export"
-            );
           },
           onUnselect() {
             pbrPreview.deactivate();
@@ -779,6 +843,19 @@
             three_grid.visible = true;
           }
         });
+        MenuBar.addAction(generateMer, "file.export");
+        MenuBar.addAction(generateNormal, "tools");
+        MenuBar.addAction(
+          new Action(`${PLUGIN_ID}_create_texture_set`, {
+            name: "Create Texture Set",
+            icon: "layers",
+            description: "Creates a texture set JSON file. Generates a MER when metalness, emissive, or roughness channels are set.",
+            click() {
+              createTextureSetDialog();
+            }
+          }),
+          "file.export"
+        );
       },
       onunload() {
         pbrMode?.delete();
@@ -788,6 +865,8 @@
         styles?.delete();
         textureSetDialog?.delete();
         MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
+        MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_texture_set`);
+        MenuBar.removeAction(`tools.${PLUGIN_ID}_generate_normal`);
       }
     });
   })();
