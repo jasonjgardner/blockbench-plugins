@@ -9,6 +9,7 @@
     let displaySettingsPanel;
     let materialPanel;
     let styles;
+    let textureSetDialog;
     const NA_CHANNEL = "_NONE_";
     const PLUGIN_ID = "pbr_preview";
     const CHANNELS = {
@@ -232,6 +233,33 @@
         return canvas;
       }
     }
+    const exportMer = (cb) => {
+      const mer = PbrMaterial.createMer();
+      if (!mer) {
+        return;
+      }
+      mer.toBlob(async (blob) => {
+        if (!blob) {
+          return;
+        }
+        const [name, startpath] = Project ? [
+          `${Project.model_identifier.length > 0 ? Project.model_identifier : Project.name}_mer`,
+          Project.export_path
+        ] : ["mer"];
+        Blockbench.export(
+          {
+            content: await blob.arrayBuffer(),
+            type: "PNG",
+            name,
+            extensions: ["png"],
+            resource_id: "mer",
+            savetype: "image",
+            startpath
+          },
+          cb
+        );
+      });
+    };
     const createDisplaySettingsPanel = ({ activate }) => {
       return Vue.extend({
         name: "DisplaySettingsPanel",
@@ -428,27 +456,121 @@
       icon: "lightbulb_circle",
       name: "Generate MER",
       click() {
-        const mer = PbrMaterial.createMer();
-        if (!mer) {
-          return;
-        }
-        mer.toBlob(async (blob) => {
-          if (!blob) {
-            return;
-          }
-          const [name, startpath] = Project ? [`${Project.model_identifier ?? Project.name}_mer`, Project.export_path] : ["mer"];
-          Blockbench.export({
-            content: await blob.arrayBuffer(),
-            type: "PNG",
-            name,
-            extensions: ["png"],
-            resource_id: "mer",
-            savetype: "image",
-            startpath
-          });
-        });
+        exportMer();
       }
     });
+    const createTextureSetDialog = () => {
+      if (!Project) {
+        return;
+      }
+      const projectNormalMap = PbrMaterial.findTexture(CHANNELS.normal.id)?.name;
+      const projectHeightMap = PbrMaterial.findTexture(CHANNELS.height.id)?.name;
+      const projectColorMap = PbrMaterial.findTexture(CHANNELS.albedo.id)?.name;
+      const projectMetalnessMap = PbrMaterial.findTexture(
+        CHANNELS.metalness.id
+      )?.name;
+      const projectEmissiveMap = PbrMaterial.findTexture(
+        CHANNELS.emissive.id
+      )?.name;
+      const projectRoughnessMap = PbrMaterial.findTexture(
+        CHANNELS.roughness.id
+      )?.name;
+      const form = {};
+      if (!projectColorMap) {
+        form.baseColor = {
+          type: "color",
+          label: "Base Color",
+          value: "#ff00ff"
+        };
+      }
+      if (!projectMetalnessMap && !projectEmissiveMap && !projectRoughnessMap) {
+        form.metalness = {
+          label: "Metalness",
+          type: "range",
+          min: 0,
+          max: 255,
+          step: 1,
+          value: 0
+        };
+        form.emissive = {
+          label: "Emissive",
+          type: "range",
+          min: 0,
+          max: 255,
+          step: 1,
+          value: 0
+        };
+        form.roughness = {
+          label: "Roughness",
+          type: "range",
+          min: 0,
+          max: 255,
+          step: 1,
+          value: 0
+        };
+      }
+      if (projectNormalMap && projectHeightMap) {
+        form.depthMap = {
+          type: "radio",
+          label: "Depth Map",
+          options: {
+            normal: "Normal Map",
+            heightmap: "Height"
+          },
+          value: "normal"
+        };
+      }
+      textureSetDialog = new Dialog(`${PLUGIN_ID}_texture_set`, {
+        id: `${PLUGIN_ID}_texture_set`,
+        title: "Create Texture Set JSON",
+        buttons: ["Create", "Cancel"],
+        form,
+        onConfirm(formResult) {
+          const baseName = Project.model_identifier.length > 0 ? Project.model_identifier : Project.name;
+          const hasMer = projectMetalnessMap || projectEmissiveMap || projectRoughnessMap;
+          const textureSet = {
+            format_version: "1.16.200",
+            "minecraft:texture_set": {
+              color: (projectColorMap ? pathToName(projectColorMap, false) : formResult.baseColor.hexCode) ?? baseName,
+              metalness_emissive_roughness: [
+                formResult.metalness ?? 0,
+                formResult.emissive ?? 0,
+                formResult.roughness ?? 255
+              ]
+            }
+          };
+          if (formResult.depthMap === "normal" && projectNormalMap) {
+            textureSet["minecraft:texture_set"].normal = pathToName(
+              projectNormalMap,
+              false
+            );
+          } else if ((!projectNormalMap || formResult.depthMap === "heightmap") && projectHeightMap) {
+            textureSet["minecraft:texture_set"].heightmap = pathToName(
+              projectHeightMap,
+              false
+            );
+          }
+          const exportTextureSet = () => Blockbench.export({
+            content: JSON.stringify(textureSet, null, 2),
+            type: "JSON",
+            name: `${baseName}.texture_set`,
+            extensions: ["json"],
+            resource_id: "texture_set",
+            startpath: Project.export_path
+          });
+          if (hasMer) {
+            exportMer((filePath) => {
+              textureSet["minecraft:texture_set"].metalness_emissive_roughness = pathToName(filePath, false);
+              exportTextureSet();
+            });
+            return;
+          }
+          exportTextureSet();
+        }
+      });
+      textureSetDialog.show();
+      return textureSetDialog;
+    };
     BBPlugin.register(PLUGIN_ID, {
       title: "PBR Features",
       author: "Jason J. Gardner",
@@ -637,15 +759,26 @@
               insert_after: `${PLUGIN_ID}.display_settings`,
               insert_before: ""
             });
+            MenuBar.addAction(generateMer, "file.export");
+            MenuBar.addAction(
+              new Action(`${PLUGIN_ID}_create_texture_set`, {
+                name: "Create Texture Set JSON",
+                icon: "flare",
+                click() {
+                  createTextureSetDialog();
+                }
+              }),
+              "file.export"
+            );
           },
           onUnselect() {
             pbrPreview.deactivate();
             displaySettingsPanel?.delete();
             materialPanel?.delete();
+            textureSetDialog?.delete();
             three_grid.visible = true;
           }
         });
-        MenuBar.addAction(generateMer, "file.export");
       },
       onunload() {
         pbrMode?.delete();
@@ -653,6 +786,7 @@
         materialPanel?.delete();
         generateMer?.delete();
         styles?.delete();
+        textureSetDialog?.delete();
         MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
       }
     });
