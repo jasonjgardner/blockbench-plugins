@@ -537,7 +537,7 @@ interface IChannel {
     }
   }
 
-  generateMer = new Action(`${PLUGIN_ID}.create_mer`, {
+  generateMer = new Action(`${PLUGIN_ID}_create_mer`, {
     icon: "lightbulb_circle",
     name: "Generate MER",
     click() {
@@ -698,8 +698,12 @@ interface IChannel {
       pbrMode = new Mode(`${PLUGIN_ID}_mode`, {
         name: "PBR",
         icon: "flare",
+        selectElements: false,
+        hidden_node_types: ["texture_mesh"],
         onSelect() {
           pbrPreview.activate();
+
+          three_grid.visible = false;
 
           Blockbench.on("select_preview_scene", () => pbrPreview.activate());
 
@@ -757,8 +761,9 @@ interface IChannel {
           pbrPreview.deactivate();
           displaySettingsPanel?.delete();
           materialPanel?.delete();
+          three_grid.visible = true;
         },
-        selectElements: false,
+        
       });
 
       MenuBar.addAction(generateMer, "file.export");
@@ -769,6 +774,7 @@ interface IChannel {
       materialPanel?.delete();
       generateMer?.delete();
       styles?.delete();
+      MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`)
     },
   });
 })();
