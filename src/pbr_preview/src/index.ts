@@ -16,9 +16,7 @@ interface IChannel {
 (() => {
   const { MeshStandardMaterial } = THREE;
 
-  let sendToSubstanceAction: Action;
-  let dialogBtn: Action;
-  let dialogElement: Dialog;
+  let generateMer: Action;
   let pbrPreview: PbrPreview;
   let pbrMode: Mode;
   let displaySettingsPanel: Panel;
@@ -34,30 +32,6 @@ interface IChannel {
       description: "The color of the material",
       map: "map",
     },
-    normal: {
-      id: "normal",
-      label: "Normal",
-      description: "The material's normal map",
-      map: "normalMap",
-    },
-    ao: {
-      id: "ao",
-      label: "Ambient Occlusion",
-      description: "The material's ambient occlusion map",
-      map: "aoMap",
-    },
-    height: {
-      id: "height",
-      label: "Height",
-      description: "The material's height map",
-      map: "bumpMap",
-    },
-    roughness: {
-      id: "roughness",
-      label: "Roughness",
-      description: "The material's roughness map",
-      map: "roughnessMap",
-    },
     metalness: {
       id: "metalness",
       label: "Metalness",
@@ -69,6 +43,30 @@ interface IChannel {
       label: "Emissive",
       description: "The material's emissive map",
       map: "emissiveMap",
+    },
+    roughness: {
+      id: "roughness",
+      label: "Roughness",
+      description: "The material's roughness map",
+      map: "roughnessMap",
+    },
+    height: {
+      id: "height",
+      label: "Height",
+      description: "The material's height map",
+      map: "bumpMap",
+    },
+    normal: {
+      id: "normal",
+      label: "Normal",
+      description: "The material's normal map",
+      map: "normalMap",
+    },
+    ao: {
+      id: "ao",
+      label: "Ambient Occlusion",
+      description: "The material's ambient occlusion map",
+      map: "aoMap",
     },
   };
 
@@ -90,13 +88,19 @@ interface IChannel {
         emissiveMap,
         emissiveIntensity: emissiveMap ? 1 : 0,
         emissive: emissiveMap ? 0xffffff : 0,
+        envMap: PreviewScene.active?.cubemap ?? null,
+        envMapIntensity: 1,
         ...options,
       });
     }
 
     static projectId() {
+      if (!Project) {
+        return "default";
+      }
+
       return (
-        Project.saved_path ??
+        Project.save_path ??
         Project.model_identifier ??
         Project.uuid ??
         "default"
@@ -147,6 +151,10 @@ interface IChannel {
     }
 
     static findTexture(name: string): Texture | null {
+      if (!Project) {
+        return null;
+      }
+
       const projectData = PbrMaterial.getProjectData();
 
       const filenameRegex = new RegExp(`_${name}(\.[^.]+)?$`, "i");
@@ -173,8 +181,8 @@ interface IChannel {
       return texture;
     }
 
-    static extractChannel(texture: THREE.Texture, channel: number) {
-      const canvas: HTMLCanvasElement = texture.image;
+    static extractChannel(texture: Texture, channel: "r" | "g" | "b" | "a") {
+      const canvas = texture.canvas;
       const width = canvas.width;
       const height = canvas.height;
 
@@ -182,19 +190,6 @@ interface IChannel {
 
       if (!ctx) {
         return null;
-      }
-
-      const { data } = ctx.getImageData(0, 0, width, height);
-
-      const channelData = new Uint8Array(width * height);
-
-      const size = width * height * 4;
-
-      for (let i = 0; i < size; i += 4) {
-        const stride = i / 4;
-        channelData[stride] = data[i + channel];
-        channelData[stride + 1] = data[i + channel];
-        channelData[stride + 2] = data[i + channel];
       }
 
       const channelCanvas = document.createElement("canvas");
@@ -207,34 +202,132 @@ interface IChannel {
         return null;
       }
 
+      const channelIdx = { r: 0, g: 1, b: 2, a: 3 }[channel];
+
+      const { data } = ctx.getImageData(0, 0, width, height);
+
+      const channelData = new Uint8Array(width * height);
+
+      const size = width * height * 4;
+
+      for (let idx = 0; idx < size; idx += 4) {
+        const stride = idx / 4;
+        channelData[stride] = data[idx + channelIdx];
+        channelData[stride + 1] = data[idx + channelIdx];
+        channelData[stride + 2] = data[idx + channelIdx];
+        channelData[stride + 3] = 255;
+      }
+
       const channelImageData = channelCtx.createImageData(width, height);
 
       channelImageData.data.set(channelData);
       channelCtx.putImageData(channelImageData, 0, 0);
 
-      const channelTexture = new THREE.CanvasTexture(channelCanvas);
-      channelTexture.needsUpdate = true;
-
-      return channelTexture;
+      return channelCanvas;
     }
 
     static decodeMer(): {
-      metalness?: THREE.Texture;
-      emissive?: THREE.Texture;
-      roughness?: THREE.Texture;
+      metalness?: THREE.CanvasTexture;
+      emissive?: THREE.CanvasTexture;
+      roughness?: THREE.CanvasTexture;
+      sss?: THREE.CanvasTexture;
     } | null {
       // Extract metalness, emissive, and roughness from the texture's red, green, and blue channels respectively
-      const texture = PbrMaterial.getTexture("mer");
+      const texture = PbrMaterial.findTexture("mer");
 
       if (!texture) {
         return null;
       }
 
+      const metal = PbrMaterial.extractChannel(texture, "r");
+      const emissive = PbrMaterial.extractChannel(texture, "g");
+      const roughness = PbrMaterial.extractChannel(texture, "b");
+      const sss = PbrMaterial.extractChannel(texture, "a");
+
       return {
-        metalness: PbrMaterial.extractChannel(texture, 0) ?? undefined,
-        emissive: PbrMaterial.extractChannel(texture, 1) ?? undefined,
-        roughness: PbrMaterial.extractChannel(texture, 2) ?? undefined,
+        metalness: metal ? new THREE.CanvasTexture(metal) : undefined,
+        emissive: emissive ? new THREE.CanvasTexture(emissive) : undefined,
+        roughness: roughness ? new THREE.CanvasTexture(roughness) : undefined,
+        sss: sss ? new THREE.CanvasTexture(sss) : undefined,
       };
+    }
+
+    static createMer() {
+      const metalness = PbrMaterial.findTexture("metalness");
+      const emissive = PbrMaterial.findTexture("emissive");
+      const roughness = PbrMaterial.findTexture("roughness");
+      const sss = PbrMaterial.findTexture("sss");
+
+      const width = Math.max(
+        metalness?.width ?? 0,
+        emissive?.width ?? 0,
+        roughness?.width ?? 0,
+        Project ? Project.texture_width : 0,
+      );
+
+      const height = Math.max(
+        metalness?.height ?? 0,
+        emissive?.height ?? 0,
+        roughness?.height ?? 0,
+        Project ? Project.texture_height : 0,
+      );
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+
+      if (!ctx) {
+        return null;
+      }
+
+      const metalnessCanvas = metalness?.img
+        ? PbrMaterial.extractChannel(metalness, "r")
+        : null;
+      const emissiveCanvas = emissive?.img
+        ? PbrMaterial.extractChannel(emissive, "g")
+        : null;
+      const roughnessCanvas = roughness?.img
+        ? PbrMaterial.extractChannel(roughness, "b")
+        : null;
+      const sssCanvas = sss?.img ? PbrMaterial.extractChannel(sss, "a") : null;
+
+      const metalnessData =
+        metalnessCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ??
+        new ImageData(width, height);
+      const emissiveData =
+        emissiveCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ??
+        new ImageData(width, height);
+      const roughnessData =
+        roughnessCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ??
+        new ImageData(width, height);
+      const sssData =
+        sssCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ??
+        new ImageData(
+          new Uint8ClampedArray(width * height * 4).fill(255),
+          width,
+          height,
+        );
+
+      const size = width * height * 4;
+      const data = new Uint8Array(size);
+
+      for (let idx = 0; idx < size; idx += 4) {
+        const stride = idx / 4;
+        data[idx] = metalnessData.data[stride] ?? 0;
+        data[idx + 1] = emissiveData.data[stride] ?? 0;
+        data[idx + 2] = roughnessData.data[stride] ?? 0;
+        data[idx + 3] = sssData.data[stride] ?? 255;
+      }
+
+      const imageData = ctx.createImageData(width, height);
+
+      imageData.data.set(data);
+
+      ctx.putImageData(imageData, 0, 0);
+
+      return canvas;
     }
   }
 
@@ -366,7 +459,9 @@ interface IChannel {
         };
       },
       mounted() {
-        this.projectTextures = Project.textures ?? Texture.all;
+        this.projectTextures = Project
+          ? Project.textures ?? Texture.all
+          : Texture.all;
         this.selectedTexture = PbrMaterial.findTexture(this.channel.id);
       },
       methods: {
@@ -423,38 +518,56 @@ interface IChannel {
 
   class PbrPreview {
     activate(extendMaterial?: THREE.MeshStandardMaterialParameters) {
-      const envMap = PreviewScene.active?.cubemap ?? null;
-      const material = PbrMaterial.getMaterial({
-        envMap,
-        ...extendMaterial,
-      });
+      const material = PbrMaterial.getMaterial(extendMaterial);
 
       Outliner.elements.forEach((item) => {
         const mesh = item.getMesh();
 
-        mesh.material = material;
-        // mesh.material.needsUpdate = true;
+        if (mesh.isObject3D && !mesh.isMesh) {
+          return;
+        }
+
+        (mesh as THREE.Mesh).material = material;
       });
-
-      // Preview.selected.renderer.toneMapping = THREE.LinearToneMapping;
-      // Preview.selected.renderer.physicallyCorrectLights = true;
-
-      // Preview.selected = this.preview;
-
-      // Canvas.pbrMaterial = material;
     }
 
     deactivate() {
-      // Outliner.elements.forEach((item) => {
-      //   const mesh = item.getMesh();
-
-      //   if (this.meshMaterials.has(mesh.uuid)) {
-      //     mesh.material = this.meshMaterials.get(mesh.uuid);
-      //   }
-      // });
+      // Restores the original material
       Canvas.updateAll();
     }
   }
+
+  generateMer = new Action(`${PLUGIN_ID}.create_mer`, {
+    icon: "lightbulb_circle",
+    name: "Generate MER",
+    click() {
+      const mer = PbrMaterial.createMer();
+
+      if (!mer) {
+        return;
+      }
+
+      mer.toBlob(async (blob) => {
+        if (!blob) {
+          return;
+        }
+
+        const [name, startpath] = Project
+          ? [`${Project.model_identifier ?? Project.name}_mer`, Project.export_path]
+          : ["mer"];
+
+        Blockbench.export({
+          content: await blob.arrayBuffer(),
+          type: "PNG",
+          name,
+          extensions: ["png"],
+          resource_id: "mer",
+          savetype: "image",
+          startpath,
+        });
+      });
+    },
+  });
 
   BBPlugin.register(PLUGIN_ID, {
     title: "PBR Features",
@@ -648,28 +761,14 @@ interface IChannel {
         selectElements: false,
       });
 
-      if (isApp) {
-        sendToSubstanceAction = new Action("pbr.send_to_substance", {
-          icon: "view_in_ar",
-          description: "Send to Adobe Substance 3D",
-          click: () => {
-            console.log("Open Substance 3D");
-            // Run command line to open Substance 3D
-          },
-        });
-        MenuBar.addAction(sendToSubstanceAction, "file.export");
-      }
+      MenuBar.addAction(generateMer, "file.export");
     },
     onunload() {
-      dialogBtn?.delete();
-      dialogElement?.delete();
       pbrMode?.delete();
       displaySettingsPanel?.delete();
       materialPanel?.delete();
+      generateMer?.delete();
       styles?.delete();
-      if (isApp) {
-        sendToSubstanceAction?.delete();
-      }
     },
   });
 })();
