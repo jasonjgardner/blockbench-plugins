@@ -3,6 +3,7 @@
   // src/index.ts
   (() => {
     const { MeshStandardMaterial } = THREE;
+    let decodeMer;
     let generateMer;
     let generateNormal;
     let pbrPreview;
@@ -153,34 +154,36 @@
         }
         const channelIdx = { r: 0, g: 1, b: 2, a: 3 }[channel];
         const { data } = ctx.getImageData(0, 0, width, height);
-        const channelData = new Uint8Array(width * height);
-        const size = width * height * 4;
-        for (let idx = 0; idx < size; idx += 4) {
-          const stride = idx / 4;
-          channelData[stride] = data[idx + channelIdx];
-          channelData[stride + 1] = data[idx + channelIdx];
-          channelData[stride + 2] = data[idx + channelIdx];
-          channelData[stride + 3] = 255;
+        const channelData = new Uint8ClampedArray(width * height * 4);
+        for (let idx = 0; idx < data.length; idx += 4) {
+          channelData[idx] = data[idx + channelIdx];
+          channelData[idx + 1] = data[idx + channelIdx];
+          channelData[idx + 2] = data[idx + channelIdx];
+          channelData[idx + 3] = 255;
         }
-        const channelImageData = channelCtx.createImageData(width, height);
-        channelImageData.data.set(channelData);
-        channelCtx.putImageData(channelImageData, 0, 0);
+        const imageData = new ImageData(channelData, width, height);
+        channelCtx.putImageData(imageData, 0, 0);
         return channelCanvas;
       }
       static decodeMer() {
         const texture = PbrMaterial.findTexture("mer");
         if (!texture) {
-          return null;
+          return {
+            metalness: null,
+            emissive: null,
+            roughness: null,
+            sss: null
+          };
         }
-        const metal = PbrMaterial.extractChannel(texture, "r");
+        const metalness = PbrMaterial.extractChannel(texture, "r");
         const emissive = PbrMaterial.extractChannel(texture, "g");
         const roughness = PbrMaterial.extractChannel(texture, "b");
         const sss = PbrMaterial.extractChannel(texture, "a");
         return {
-          metalness: metal ? new THREE.CanvasTexture(metal) : void 0,
-          emissive: emissive ? new THREE.CanvasTexture(emissive) : void 0,
-          roughness: roughness ? new THREE.CanvasTexture(roughness) : void 0,
-          sss: sss ? new THREE.CanvasTexture(sss) : void 0
+          metalness,
+          emissive,
+          roughness,
+          sss
         };
       }
       static createMer() {
@@ -219,19 +222,73 @@
           width,
           height
         );
-        const size = width * height * 4;
-        const data = new Uint8Array(size);
-        for (let idx = 0; idx < size; idx += 4) {
-          const stride = idx / 4;
-          data[idx] = metalnessData.data[stride] ?? 0;
-          data[idx + 1] = emissiveData.data[stride] ?? 0;
-          data[idx + 2] = roughnessData.data[stride] ?? 0;
-          data[idx + 3] = sssData.data[stride] ?? 255;
+        const data = new Uint8ClampedArray(width * height * 4);
+        for (let idx = 0; idx < data.length; idx += 4) {
+          data[idx] = metalnessData.data[idx];
+          data[idx + 1] = emissiveData.data[idx];
+          data[idx + 2] = roughnessData.data[idx];
+          data[idx + 3] = sssData.data[idx];
         }
-        const imageData = ctx.createImageData(width, height);
-        imageData.data.set(data);
-        ctx.putImageData(imageData, 0, 0);
+        ctx.putImageData(new ImageData(data, width, height), 0, 0);
         return canvas;
+      }
+      static createNormalMap(texture, heightInAlpha = false) {
+        const textureCtx = texture.canvas.getContext("2d");
+        if (!textureCtx) {
+          return;
+        }
+        const { width, height } = texture;
+        const { data: textureData } = textureCtx.getImageData(
+          0,
+          0,
+          width,
+          height
+        );
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          return;
+        }
+        const getHeight = (x, y) => {
+          const idx = (x + y * width) * 4;
+          return textureData[idx] / 255;
+        };
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(texture.img, 0, 0, width, height);
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        const normalize = (v) => {
+          const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+          return [v[0] / length, v[1] / length, v[2] / length];
+        };
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const left = getHeight(Math.max(x - 1, 0), y);
+            const right = getHeight(Math.min(x + 1, width - 1), y);
+            const top = getHeight(x, Math.max(y - 1, 0));
+            const bottom = getHeight(x, Math.min(y + 1, height - 1));
+            const dx = right - left;
+            const dy = bottom - top;
+            const normal = normalize([-dx, -dy, 1]);
+            const idx = (y * width + x) * 4;
+            data[idx] = (normal[0] + 1) / 2 * 255;
+            data[idx + 1] = (normal[1] + 1) / 2 * 255;
+            data[idx + 2] = (normal[2] + 1) / 2 * 255;
+            data[idx + 3] = heightInAlpha ? getHeight(x, y) * 255 : 255;
+          }
+        }
+        ctx.putImageData(imageData, 0, 0);
+        const normalMap = new Texture({
+          name: `${texture.name}_normal`,
+          saved: false,
+          particle: false,
+          keep_size: true
+        }).fromDataURL(canvas.toDataURL());
+        if (Project) {
+          Project.textures.push(normalMap);
+        }
+        return normalMap;
       }
     }
     const exportMer = (cb) => {
@@ -453,65 +510,6 @@
         Canvas.updateAll();
       }
     }
-    const generateNormalMap = (texture) => {
-      const textureCtx = texture.canvas.getContext("2d");
-      if (!textureCtx) {
-        return;
-      }
-      const { data: textureData } = textureCtx.getImageData(
-        0,
-        0,
-        texture.width,
-        texture.height
-      );
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        return;
-      }
-      const width = texture.width;
-      const height = texture.height;
-      const getHeight = (x, y) => {
-        const idx = (x + y * width) * 4;
-        return textureData[idx] / 255;
-      };
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(texture.img, 0, 0, width, height);
-      const imageData = ctx.getImageData(0, 0, width, height);
-      const data = imageData.data;
-      const normalize = (v) => {
-        const length = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-        return [v[0] / length, v[1] / length, v[2] / length];
-      };
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const left = getHeight(Math.max(x - 1, 0), y);
-          const right = getHeight(Math.min(x + 1, width - 1), y);
-          const top = getHeight(x, Math.max(y - 1, 0));
-          const bottom = getHeight(x, Math.min(y + 1, height - 1));
-          const dx = right - left;
-          const dy = bottom - top;
-          const normal = normalize([-dx, -dy, 1]);
-          const idx = (y * width + x) * 4;
-          data[idx] = (normal[0] + 1) / 2 * 255;
-          data[idx + 1] = (normal[1] + 1) / 2 * 255;
-          data[idx + 2] = (normal[2] + 1) / 2 * 255;
-          data[idx + 3] = 255;
-        }
-      }
-      ctx.putImageData(imageData, 0, 0);
-      const normalMap = new Texture({
-        name: `${texture.name}_normal`,
-        saved: false,
-        particle: false,
-        keep_size: true
-      }).fromDataURL(canvas.toDataURL());
-      if (Project) {
-        Project.textures.push(normalMap);
-      }
-      return normalMap;
-    };
     generateNormal = new Action(`${PLUGIN_ID}_generate_normal`, {
       icon: "altitude",
       name: "Generate Normal Map",
@@ -532,6 +530,40 @@
       name: "Generate MER",
       click() {
         exportMer();
+      }
+    });
+    decodeMer = new Action(`${PLUGIN_ID}_decode_mer`, {
+      icon: "arrow_split",
+      name: "Decode MER",
+      click() {
+        const { metalness, emissive, roughness } = PbrMaterial.decodeMer();
+        if (metalness) {
+          const metalnessTexture = new Texture({
+            name: "metalness",
+            saved: false,
+            particle: false
+          }).fromDataURL(metalness.toDataURL());
+          Project.textures.push(metalnessTexture);
+          PbrMaterial.saveTexture(CHANNELS.metalness.id, metalnessTexture.uuid);
+        }
+        if (emissive) {
+          const emissiveTexture = new Texture({
+            name: "emissive",
+            saved: false,
+            particle: false
+          }).fromDataURL(emissive.toDataURL());
+          Project.textures.push(emissiveTexture);
+          PbrMaterial.saveTexture(CHANNELS.emissive.id, emissiveTexture.uuid);
+        }
+        if (roughness) {
+          const roughnessTexture = new Texture({
+            name: "roughness",
+            saved: false,
+            particle: false
+          }).fromDataURL(roughness.toDataURL());
+          Project.textures.push(roughnessTexture);
+          PbrMaterial.saveTexture(CHANNELS.roughness.id, roughnessTexture.uuid);
+        }
       }
     });
     const createTextureSetDialog = () => {
@@ -845,6 +877,7 @@
         });
         MenuBar.addAction(generateMer, "file.export");
         MenuBar.addAction(generateNormal, "tools");
+        MenuBar.addAction(decodeMer, "tools");
         MenuBar.addAction(
           new Action(`${PLUGIN_ID}_create_texture_set`, {
             name: "Create Texture Set",
@@ -862,6 +895,7 @@
         displaySettingsPanel?.delete();
         materialPanel?.delete();
         generateMer?.delete();
+        decodeMer?.delete();
         styles?.delete();
         textureSetDialog?.delete();
         MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
