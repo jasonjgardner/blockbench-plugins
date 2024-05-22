@@ -26,8 +26,9 @@ interface IChannel {
   let styles: Deletable;
   let textureSetDialog: Dialog;
 
-  const NA_CHANNEL = "_NONE_";
   const PLUGIN_ID = "pbr_preview";
+  const PLUGIN_VERSION = "1.0.0";
+  const NA_CHANNEL = "_NONE_";
   const CHANNELS: Record<string, IChannel> = {
     albedo: {
       id: "albedo",
@@ -82,7 +83,14 @@ interface IChannel {
       return new MeshStandardMaterial({
         map:
           PbrMaterial.getTexture("albedo") ??
-          new THREE.CanvasTexture(Texture.all[0]?.canvas),
+          new THREE.CanvasTexture(
+            Texture.all[0]?.canvas,
+            undefined,
+            undefined,
+            undefined,
+            THREE.NearestFilter,
+            THREE.NearestFilter,
+          ),
         aoMap: PbrMaterial.getTexture("ao"),
         normalMap: PbrMaterial.getTexture("normal"),
         roughnessMap: PbrMaterial.getTexture("roughness"),
@@ -177,7 +185,14 @@ interface IChannel {
         return null;
       }
 
-      const texture = new THREE.CanvasTexture(src.canvas);
+      const texture = new THREE.CanvasTexture(
+        src.canvas,
+        undefined,
+        undefined,
+        undefined,
+        THREE.NearestFilter,
+        THREE.NearestFilter,
+      );
 
       texture.needsUpdate = true;
 
@@ -720,7 +735,7 @@ interface IChannel {
         return;
       }
 
-      const normalMap = generateNormalMap(texture);
+      const normalMap = PbrMaterial.createNormalMap(texture);
 
       if (normalMap) {
         PbrMaterial.saveTexture("normal", normalMap.uuid);
@@ -919,13 +934,17 @@ interface IChannel {
   };
 
   BBPlugin.register(PLUGIN_ID, {
+    version: PLUGIN_VERSION,
     title: "PBR Features",
     author: "Jason J. Gardner",
-    description: "Adds PBR features to Blockbench",
-    icon: "flare",
+    description:
+      "Create RTX/Deferred Rendering textures in Blockbench. Adds support for previewing PBR materials and exporting them in Minecraft-compatible formats.",
+    tags: ["PBR", "RTX", "Deferred Rendering"],
+    icon: "icon.png",
     variant: "both",
     await_loading: true,
     new_repository_format: true,
+    website: "https://github.com/jasonjgardner/blockbench-plugins",
     onload() {
       pbrPreview = new PbrPreview();
 
