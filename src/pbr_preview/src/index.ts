@@ -6,6 +6,15 @@
 /// <reference types="three" />
 /// <reference path="../../../types/index.d.ts" />
 
+type Channel =
+  | "albedo"
+  | "metalness"
+  | "emissive"
+  | "roughness"
+  | "height"
+  | "normal"
+  | "ao";
+
 interface IChannel {
   label: string;
   description: string;
@@ -78,10 +87,48 @@ interface IChannel {
   class PbrMaterial {
     static getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
       // const mer = PbrPreviewScene.decodeMer();
+      let emissiveMap = PbrMaterial.getTexture(CHANNELS.emissive.id);
+      let roughnessMap = PbrMaterial.getTexture(CHANNELS.roughness.id);
+      let metalnessMap = PbrMaterial.getTexture(CHANNELS.metalness.id);
 
-      const emissiveMap = PbrMaterial.getTexture("emissive");
+      if (!emissiveMap && !roughnessMap && !metalnessMap) {
+        const { metalness, emissive, roughness } = PbrMaterial.decodeMer();
 
-      return new MeshStandardMaterial({
+        if (metalness) {
+          metalnessMap = new THREE.CanvasTexture(
+            metalness,
+            undefined,
+            undefined,
+            undefined,
+            THREE.NearestFilter,
+            THREE.NearestFilter,
+          );
+        }
+
+        if (emissive) {
+          emissiveMap = new THREE.CanvasTexture(
+            emissive,
+            undefined,
+            undefined,
+            undefined,
+            THREE.NearestFilter,
+            THREE.NearestFilter,
+          );
+        }
+
+        if (roughness) {
+          roughnessMap = new THREE.CanvasTexture(
+            roughness,
+            undefined,
+            undefined,
+            undefined,
+            THREE.NearestFilter,
+            THREE.NearestFilter,
+          );
+        }
+      }
+
+      return new THREE.MeshStandardMaterial({
         map:
           PbrMaterial.getTexture("albedo") ??
           new THREE.CanvasTexture(
@@ -92,11 +139,13 @@ interface IChannel {
             THREE.NearestFilter,
             THREE.NearestFilter,
           ),
-        aoMap: PbrMaterial.getTexture("ao"),
-        normalMap: PbrMaterial.getTexture("normal"),
-        roughnessMap: PbrMaterial.getTexture("roughness"),
-        metalnessMap: PbrMaterial.getTexture("metalness"),
-        bumpMap: PbrMaterial.getTexture("heightmap"),
+        aoMap: PbrMaterial.getTexture(CHANNELS.ao.id),
+        normalMap: PbrMaterial.getTexture(CHANNELS.normal.id),
+        bumpMap: PbrMaterial.getTexture(CHANNELS.height.id),
+        metalnessMap,
+        metalness: metalnessMap ? 1 : 0,
+        roughnessMap,
+        roughness: roughnessMap ? 1 : 0,
         emissiveMap,
         emissiveIntensity: emissiveMap ? 1 : 0,
         emissive: emissiveMap ? 0xffffff : 0,
@@ -714,7 +763,8 @@ interface IChannel {
           return;
         }
 
-        (mesh as THREE.Mesh).material = material;
+        mesh.material = material;
+        mesh.material.needsUpdate = true;
       });
     }
 
@@ -936,10 +986,12 @@ interface IChannel {
   };
 
   let updateListener = () => {
-    pbrPreview.activate();
-  }
+    if (Settings.get("pbr_active")) {
+      pbrPreview.activate();
+    }
+  };
 
-  pbrDisplaySetting = new Setting('pbr_active', {
+  pbrDisplaySetting = new Setting("pbr_active", {
     category: "preview",
     name: "Enable PBR Preview",
     type: "boolean",
@@ -947,7 +999,7 @@ interface IChannel {
     icon: "tonality",
     onChange(value) {
       pbrPreview.deactivate();
-      
+
       if (value) {
         pbrPreview.activate();
         Blockbench.addListener("finished_edit", updateListener);
@@ -1151,10 +1203,13 @@ interface IChannel {
           });
         },
         onUnselect() {
-          if (!Settings.get('pbr_active')) {
+          if (!Settings.get("pbr_active")) {
             pbrPreview.deactivate();
+            Blockbench.removeListener("finished_edit", updateListener);
+          } else {
+            Blockbench.addListener("finished_edit", updateListener);
           }
-          
+
           displaySettingsPanel?.delete();
           materialPanel?.delete();
           textureSetDialog?.delete();
@@ -1185,19 +1240,15 @@ interface IChannel {
           icon: "tonality",
           category: "view",
           condition: {
-            modes: ["edit", "paint", "animate"]
+            modes: ["edit", "paint", "animate"],
           },
-          linked_setting: 'pbr_active',
-          click() {
-            
-          }
+          linked_setting: "pbr_active",
+          click() {},
         }),
-        "view"
+        "view",
       );
 
-      if (Settings.get('pbr_active')) {
-        pbrPreview.activate();
-      }
+      Blockbench.addListener("add_texture", updateListener);
     },
     onunload() {
       pbrMode?.delete();
@@ -1211,6 +1262,7 @@ interface IChannel {
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_texture_set`);
       MenuBar.removeAction(`tools.${PLUGIN_ID}_generate_normal`);
+      Blockbench.removeListener("add_texture", updateListener);
     },
   });
 })();
