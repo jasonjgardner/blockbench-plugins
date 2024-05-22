@@ -754,10 +754,15 @@ interface IChannel {
 
   class PbrPreview {
     activate(extendMaterial?: THREE.MeshStandardMaterialParameters) {
+      // Don't overwrite placeholder material in Edit and Paint mode
+      if (Texture.all.length === 0 && Modes.id !== `${PLUGIN_ID}_mode`) {
+        return;
+      }
+
       const material = PbrMaterial.getMaterial(extendMaterial);
 
       Outliner.elements.forEach((item) => {
-        const mesh = item.getMesh();
+        const mesh = item.getMesh() as THREE.Mesh;
 
         if (mesh.isObject3D && !mesh.isMesh) {
           return;
@@ -992,6 +997,8 @@ interface IChannel {
   };
 
   const subscribeToEvents: Array<EventName | string> = [
+    "undo",
+    "redo",
     "setup_project",
     "select_project",
     "add_texture",
