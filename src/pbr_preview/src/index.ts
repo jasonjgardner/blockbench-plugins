@@ -21,6 +21,7 @@ interface IChannel {
   let generateNormal: Action;
   let pbrPreview: PbrPreview;
   let pbrMode: Mode;
+  let pbrDisplaySetting: Setting;
   let displaySettingsPanel: Panel;
   let materialPanel: Panel;
   let styles: Deletable;
@@ -101,6 +102,7 @@ interface IChannel {
         emissive: emissiveMap ? 0xffffff : 0,
         envMap: PreviewScene.active?.cubemap ?? null,
         envMapIntensity: 1,
+        alphaTest: 0.5,
         ...options,
       });
     }
@@ -933,6 +935,29 @@ interface IChannel {
     return textureSetDialog;
   };
 
+  let updateListener = () => {
+    pbrPreview.activate();
+  }
+
+  pbrDisplaySetting = new Setting('pbr_active', {
+    category: "preview",
+    name: "Enable PBR Preview",
+    type: "boolean",
+    value: false,
+    icon: "tonality",
+    onChange(value) {
+      pbrPreview.deactivate();
+      
+      if (value) {
+        pbrPreview.activate();
+        Blockbench.addListener("finished_edit", updateListener);
+        return;
+      }
+
+      Blockbench.removeListener("finished_edit", updateListener);
+    },
+  });
+
   BBPlugin.register(PLUGIN_ID, {
     version: PLUGIN_VERSION,
     title: "PBR Features",
@@ -1126,7 +1151,10 @@ interface IChannel {
           });
         },
         onUnselect() {
-          pbrPreview.deactivate();
+          if (!Settings.get('pbr_active')) {
+            pbrPreview.deactivate();
+          }
+          
           displaySettingsPanel?.delete();
           materialPanel?.delete();
           textureSetDialog?.delete();
@@ -1149,10 +1177,32 @@ interface IChannel {
         }),
         "file.export",
       );
+
+      MenuBar.addAction(
+        new Toggle("toggle_pbr", {
+          name: "PBR Preview",
+          description: "Toggle PBR Preview",
+          icon: "tonality",
+          category: "view",
+          condition: {
+            modes: ["edit", "paint", "animate"]
+          },
+          linked_setting: 'pbr_active',
+          click() {
+            
+          }
+        }),
+        "view"
+      );
+
+      if (Settings.get('pbr_active')) {
+        pbrPreview.activate();
+      }
     },
     onunload() {
       pbrMode?.delete();
       displaySettingsPanel?.delete();
+      pbrDisplaySetting?.delete();
       materialPanel?.delete();
       generateMer?.delete();
       decodeMer?.delete();
