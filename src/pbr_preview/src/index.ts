@@ -143,9 +143,9 @@ interface IChannel {
         normalMap: PbrMaterial.getTexture(CHANNELS.normal.id),
         bumpMap: PbrMaterial.getTexture(CHANNELS.height.id),
         metalnessMap,
-        metalness: metalnessMap ? 1 : 0,
+        // metalness: metalnessMap ? 1 : 0,
         roughnessMap,
-        roughness: roughnessMap ? 1 : 0,
+        // roughness: roughnessMap ? 1 : 0,
         emissiveMap,
         emissiveIntensity: emissiveMap ? 1 : 0,
         emissive: emissiveMap ? 0xffffff : 0,
@@ -985,10 +985,31 @@ interface IChannel {
     return textureSetDialog;
   };
 
-  let updateListener = () => {
+  const updateListener = () => {
     if (Settings.get("pbr_active")) {
       pbrPreview.activate();
     }
+  };
+
+  const subscribeToEvents: Array<EventName | string> = [
+    "setup_project",
+    "select_project",
+    "add_texture",
+    "finished_edit",
+    "update_view",
+    "update_texture_selection",
+  ];
+
+  const enableListeners = () => {
+    subscribeToEvents.forEach((event) => {
+      Blockbench.addListener(event as EventName, updateListener);
+    });
+  };
+
+  const disableListeners = () => {
+    subscribeToEvents.forEach((event) => {
+      Blockbench.removeListener(event as EventName, updateListener);
+    });
   };
 
   pbrDisplaySetting = new Setting("pbr_active", {
@@ -1002,11 +1023,11 @@ interface IChannel {
 
       if (value) {
         pbrPreview.activate();
-        Blockbench.addListener("finished_edit", updateListener);
+        enableListeners();
         return;
       }
 
-      Blockbench.removeListener("finished_edit", updateListener);
+      disableListeners();
     },
   });
 
@@ -1203,17 +1224,18 @@ interface IChannel {
           });
         },
         onUnselect() {
-          if (!Settings.get("pbr_active")) {
-            pbrPreview.deactivate();
-            Blockbench.removeListener("finished_edit", updateListener);
-          } else {
-            Blockbench.addListener("finished_edit", updateListener);
-          }
-
           displaySettingsPanel?.delete();
           materialPanel?.delete();
           textureSetDialog?.delete();
           three_grid.visible = true;
+
+          if (!Settings.get("pbr_active")) {
+            pbrPreview.deactivate();
+            disableListeners();
+            return;
+          }
+
+          enableListeners();
         },
       });
 
@@ -1247,8 +1269,6 @@ interface IChannel {
         }),
         "view",
       );
-
-      Blockbench.addListener("add_texture", updateListener);
     },
     onunload() {
       pbrMode?.delete();
@@ -1262,7 +1282,7 @@ interface IChannel {
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_texture_set`);
       MenuBar.removeAction(`tools.${PLUGIN_ID}_generate_normal`);
-      Blockbench.removeListener("add_texture", updateListener);
+      disableListeners();
     },
   });
 })();
