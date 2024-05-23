@@ -26,6 +26,7 @@ interface IChannel {
   const { MeshStandardMaterial } = THREE;
 
   let decodeMer: Action;
+  let createTextureSet: Action;
   let generateMer: Action;
   let generateNormal: Action;
   let pbrPreview: PbrPreview;
@@ -84,64 +85,57 @@ interface IChannel {
     },
   };
 
+  const getProjectTextures = () => {
+    const allTextures = Project ? Project.textures ?? Texture.all : Texture.all;
+
+    return allTextures
+      .filter((t: Texture) => t.layers.length > 0)
+      .flatMap((t: Texture) => t.layers);
+  };
+
   class PbrMaterial {
-    static getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
-      // const mer = PbrPreviewScene.decodeMer();
-      let emissiveMap = PbrMaterial.getTexture(CHANNELS.emissive.id);
-      let roughnessMap = PbrMaterial.getTexture(CHANNELS.roughness.id);
-      let metalnessMap = PbrMaterial.getTexture(CHANNELS.metalness.id);
+    static merToCanvas(src: Array<Texture | TextureLayer>) {
+      let emissiveMap = PbrMaterial.getTexture(CHANNELS.emissive, src);
+      let roughnessMap = PbrMaterial.getTexture(CHANNELS.roughness, src);
+      let metalnessMap = PbrMaterial.getTexture(CHANNELS.metalness, src);
 
       if (!emissiveMap && !roughnessMap && !metalnessMap) {
-        const { metalness, emissive, roughness } = PbrMaterial.decodeMer();
+        const { metalness, emissive, roughness } = PbrMaterial.decodeMer(src);
 
         if (metalness) {
-          metalnessMap = new THREE.CanvasTexture(
-            metalness,
-            undefined,
-            undefined,
-            undefined,
-            THREE.NearestFilter,
-            THREE.NearestFilter,
-          );
+          metalnessMap = PbrMaterial.makePixelatedCanvas(metalness);
         }
 
         if (emissive) {
-          emissiveMap = new THREE.CanvasTexture(
-            emissive,
-            undefined,
-            undefined,
-            undefined,
-            THREE.NearestFilter,
-            THREE.NearestFilter,
-          );
+          emissiveMap = PbrMaterial.makePixelatedCanvas(emissive);
         }
 
         if (roughness) {
-          roughnessMap = new THREE.CanvasTexture(
-            roughness,
-            undefined,
-            undefined,
-            undefined,
-            THREE.NearestFilter,
-            THREE.NearestFilter,
-          );
+          roughnessMap = PbrMaterial.makePixelatedCanvas(roughness);
         }
       }
 
+      return {
+        emissiveMap,
+        roughnessMap,
+        metalnessMap,
+      };
+    }
+
+    static getMaterial(
+      options: THREE.MeshStandardMaterialParameters = {},
+      src?: Array<Texture | TextureLayer> | null,
+    ) {
+      const { emissiveMap, roughnessMap, metalnessMap } =
+        PbrMaterial.merToCanvas(src ?? getProjectTextures());
+
       return new THREE.MeshStandardMaterial({
         map:
-          PbrMaterial.getTexture("albedo") ??
-          new THREE.CanvasTexture(
-            Texture.all[0]?.canvas,
-            undefined,
-            undefined,
-            undefined,
-            THREE.NearestFilter,
-            THREE.NearestFilter,
-          ),
-        aoMap: PbrMaterial.getTexture(CHANNELS.ao.id),
-        normalMap: PbrMaterial.getTexture(CHANNELS.normal.id),
-        bumpMap: PbrMaterial.getTexture(CHANNELS.height.id),
+          PbrMaterial.getTexture(CHANNELS.albedo, src) ??
+          PbrMaterial.makePixelatedCanvas(Texture.all[0].canvas),
+        aoMap: PbrMaterial.getTexture(CHANNELS.ao, src),
+        normalMap: PbrMaterial.getTexture(CHANNELS.normal, src),
+        bumpMap: PbrMaterial.getTexture(CHANNELS.height, src),
         metalnessMap,
         // metalness: metalnessMap ? 1 : 0,
         roughnessMap,
@@ -170,6 +164,7 @@ interface IChannel {
     }
 
     static getProjectsData() {
+      // TODO: Load from Blockbench project data
       const projectsJson = localStorage.getItem(`${PLUGIN_ID}.pbr_textures`);
       return projectsJson ? JSON.parse(projectsJson) : {};
     }
@@ -180,9 +175,13 @@ interface IChannel {
       return projects[id] ?? {};
     }
 
-    static saveTexture(name: string, src: string) {
+    static saveTexture(channel: IChannel, src: string) {
       const projects = PbrMaterial.getProjectsData();
       const id = PbrMaterial.projectId();
+
+      const key = channel.id;
+
+      // TODO: Save with project data
 
       localStorage.setItem(
         `${PLUGIN_ID}.pbr_textures`,
@@ -190,18 +189,18 @@ interface IChannel {
           ...projects,
           [id]: {
             ...projects[id],
-            [name]: src,
+            [key]: src,
           },
         }),
       );
     }
 
-    static removeTexture(name: string) {
+    static removeTexture(channel: IChannel) {
       const id = PbrMaterial.projectId();
       const projects = PbrMaterial.getProjectsData();
       const projectData = PbrMaterial.getProjectData();
 
-      delete projectData[name];
+      delete projectData[channel.id];
 
       localStorage.setItem(
         `${PLUGIN_ID}.pbr_textures`,
@@ -212,32 +211,33 @@ interface IChannel {
       );
     }
 
-    static findTexture(name: string): Texture | null {
+    static findTexture(
+      name: string | IChannel,
+      src?: Array<Texture | TextureLayer> | null,
+    ): Texture | TextureLayer | null {
       if (!Project) {
         return null;
       }
 
       const projectData = PbrMaterial.getProjectData();
+      const key = typeof name === "string" ? name : name.id;
 
-      const filenameRegex = new RegExp(`_${name}(\.[^.]+)?$`, "i");
+      const filenameRegex = new RegExp(`_${key}(\.[^.]+)?$`, "i");
+      const textureSrc = src ?? getProjectTextures();
+
       return (
-        Project.textures?.find(
-          (t: Texture) =>
-            projectData[name] === t.uuid ||
-            (filenameRegex.test(t.name) && projectData[name] !== NA_CHANNEL),
+        textureSrc.find(
+          (t: Texture | TextureLayer) =>
+            t.uuid === name ||
+            projectData[key] === t.uuid ||
+            (filenameRegex.test(t.name) && projectData[key] !== NA_CHANNEL),
         ) ?? null
       );
     }
 
-    static getTexture(name: string) {
-      const src = PbrMaterial.findTexture(name);
-
-      if (!src) {
-        return null;
-      }
-
+    static makePixelatedCanvas(canvas: HTMLCanvasElement) {
       const texture = new THREE.CanvasTexture(
-        src.canvas,
+        canvas,
         undefined,
         undefined,
         undefined,
@@ -250,7 +250,23 @@ interface IChannel {
       return texture;
     }
 
-    static extractChannel(texture: Texture, channel: "r" | "g" | "b" | "a") {
+    /**
+     * Searches for a texture and creates a canvas element with the texture data if found
+     * @param name The name of the texture to search for. Use a channel or a texture name or UUID
+     * @param src An array of textures to search in. Defaults to all textures in the project
+     */
+    static getTexture(
+      name: string | IChannel,
+      src?: Array<Texture | TextureLayer> | null,
+    ) {
+      const texture = PbrMaterial.findTexture(name, src);
+      return texture ? PbrMaterial.makePixelatedCanvas(texture.canvas) : null;
+    }
+
+    static extractChannel(
+      texture: Texture | TextureLayer,
+      channel: "r" | "g" | "b" | "a",
+    ) {
       const canvas = texture.canvas;
       const width = canvas.width;
       const height = canvas.height;
@@ -291,14 +307,17 @@ interface IChannel {
       return channelCanvas;
     }
 
-    static decodeMer(emissiveThreshold = 25.5): {
+    static decodeMer(
+      src: Array<Texture | TextureLayer> | null = getProjectTextures(),
+      emissiveThreshold = 25.5,
+    ): {
       metalness?: HTMLCanvasElement | null;
       emissive?: HTMLCanvasElement | null;
       emissiveLevel?: HTMLCanvasElement | null;
       roughness?: HTMLCanvasElement | null;
       sss?: HTMLCanvasElement | null;
     } {
-      const texture = PbrMaterial.findTexture("mer");
+      const texture = PbrMaterial.findTexture("mer", src);
 
       if (!texture) {
         return {
@@ -315,11 +334,17 @@ interface IChannel {
       const roughness = PbrMaterial.extractChannel(texture, "b");
       const sss = PbrMaterial.extractChannel(texture, "a");
 
-      // Use emissiveLevel as mask for getting emissive color from albedo channel
-      const albedo = PbrMaterial.findTexture(CHANNELS.albedo.id);
       const emissive = document.createElement("canvas");
-      emissive.width = albedo?.width ?? texture.width;
-      emissive.height = albedo?.height ?? texture.height;
+      emissive.width = texture.img.width;
+      emissive.height = texture.img.height;
+
+      // Use emissiveLevel as mask for getting emissive color from albedo channel
+      const albedo = PbrMaterial.findTexture(CHANNELS.albedo);
+
+      if (albedo) {
+        emissive.width = albedo.img.width;
+        emissive.height = albedo.img.height;
+      }
 
       const emissiveCtx = emissive.getContext("2d");
       const emissiveLevelCtx = emissiveLevel?.getContext("2d");
@@ -383,22 +408,22 @@ interface IChannel {
     }
 
     static createMer() {
-      const metalness = PbrMaterial.findTexture("metalness");
-      const emissive = PbrMaterial.findTexture("emissive");
-      const roughness = PbrMaterial.findTexture("roughness");
+      const metalness = PbrMaterial.findTexture(CHANNELS.metalness);
+      const emissive = PbrMaterial.findTexture(CHANNELS.emissive);
+      const roughness = PbrMaterial.findTexture(CHANNELS.roughness);
       const sss = PbrMaterial.findTexture("sss");
 
       const width = Math.max(
-        metalness?.width ?? 0,
-        emissive?.width ?? 0,
-        roughness?.width ?? 0,
+        metalness?.img.width ?? 0,
+        emissive?.img.width ?? 0,
+        roughness?.img.width ?? 0,
         Project ? Project.texture_width : 0,
       );
 
       const height = Math.max(
-        metalness?.height ?? 0,
-        emissive?.height ?? 0,
-        roughness?.height ?? 0,
+        metalness?.img.height ?? 0,
+        emissive?.img.height ?? 0,
+        roughness?.img.height ?? 0,
         Project ? Project.texture_height : 0,
       );
 
@@ -454,14 +479,17 @@ interface IChannel {
       return canvas;
     }
 
-    static createNormalMap(texture: Texture, heightInAlpha = false) {
+    static createNormalMap(
+      texture: Texture | TextureLayer,
+      heightInAlpha = false,
+    ) {
       const textureCtx = texture.canvas.getContext("2d");
 
       if (!textureCtx) {
         return;
       }
 
-      const { width, height } = texture;
+      const { width, height } = texture.img;
 
       const { data: textureData } = textureCtx.getImageData(
         0,
@@ -518,18 +546,30 @@ interface IChannel {
 
       ctx.putImageData(imageData, 0, 0);
 
-      const normalMap = new Texture({
+      const dataUrl = canvas.toDataURL();
+
+      const normalMapTexture = new Texture({
         name: `${texture.name}_normal`,
         saved: false,
         particle: false,
         keep_size: true,
-      }).fromDataURL(canvas.toDataURL());
+      }).fromDataURL(dataUrl);
 
-      if (Project) {
-        Project.textures.push(normalMap);
+      const normalMapLayer = new TextureLayer(
+        {
+          name: `${texture.name}_normal`,
+          data_url: dataUrl,
+        },
+        normalMapTexture,
+      );
+
+      if (texture instanceof TextureLayer) {
+        texture.texture.layers.push(normalMapLayer);
+      } else if (Project) {
+        Project.textures.push(normalMapTexture);
       }
 
-      return normalMap;
+      return normalMapLayer;
     }
   }
 
@@ -686,8 +726,8 @@ interface IChannel {
         </div>
       `,
       data(): {
-        selectedTexture: Texture | null;
-        projectTextures: Array<Texture>;
+        selectedTexture: Texture | TextureLayer | null;
+        projectTextures: TextureLayer[];
       } {
         return {
           selectedTexture: null,
@@ -695,9 +735,7 @@ interface IChannel {
         };
       },
       mounted() {
-        this.projectTextures = Project
-          ? Project.textures ?? Texture.all
-          : Texture.all;
+        this.projectTextures = getProjectTextures();
         this.selectedTexture = PbrMaterial.findTexture(this.channel.id);
       },
       methods: {
@@ -706,7 +744,7 @@ interface IChannel {
         },
         setTexture(event: Event) {
           const texture = this.projectTextures.find(
-            (t: Texture) =>
+            (t: TextureLayer) =>
               t.uuid === (event.target as HTMLSelectElement).value,
           );
 
@@ -714,14 +752,21 @@ interface IChannel {
             return;
           }
 
-          PbrMaterial.saveTexture(this.channel.id, texture.uuid);
+          PbrMaterial.saveTexture(this.channel, texture.uuid);
           this.selectedTexture = texture;
           activate({
-            [this.channel.map]: new THREE.CanvasTexture(texture.canvas),
+            [this.channel.map]: new THREE.CanvasTexture(
+              texture.canvas,
+              undefined,
+              undefined,
+              undefined,
+              THREE.NearestFilter,
+              THREE.NearestFilter,
+            ),
           });
         },
         unsetTexture() {
-          PbrMaterial.saveTexture(this.channel.id, NA_CHANNEL);
+          PbrMaterial.saveTexture(this.channel, NA_CHANNEL);
           this.selectedTexture = null;
           activate({
             [this.channel.map]: null,
@@ -755,27 +800,50 @@ interface IChannel {
   class PbrPreview {
     activate(extendMaterial?: THREE.MeshStandardMaterialParameters) {
       // Don't overwrite placeholder material in Edit and Paint mode
-      if (Texture.all.length === 0 && Modes.id !== `${PLUGIN_ID}_mode`) {
+      if (
+        !Project ||
+        (Texture.all.length === 0 && Modes.id !== `${PLUGIN_ID}_mode`)
+      ) {
         return;
       }
 
-      const material = PbrMaterial.getMaterial(extendMaterial);
-
       Outliner.elements.forEach((item) => {
-        const mesh = item.getMesh() as THREE.Mesh;
-
-        if (mesh.isObject3D && !mesh.isMesh) {
+        if (!(item instanceof Cube)) {
           return;
         }
 
-        mesh.material = material;
-        mesh.material.needsUpdate = true;
+        Object.keys(item.faces).forEach((key) => {
+          const face = item.faces[key];
+          const texture = face.getTexture();
+
+          if (!texture) {
+            return;
+          }
+
+          const projectMaterial = Project.materials[texture.uuid];
+          const material = PbrMaterial.getMaterial(
+            extendMaterial,
+            texture.layers ?? null,
+          );
+
+          Project.materials[texture.uuid] = THREE.ShaderMaterial.prototype.copy.call(
+            material,
+            projectMaterial
+          );
+
+          // Project.materials[texture.uuid].needsUpdate = true;
+
+          // face.cube.faces[key].material = Project.materials[texture.uuid];
+          // face.cube.faces[key].material.needsUpdate = true;
+          (item.mesh as THREE.Mesh).material.push(Project.materials[texture.uuid]);
+        });
+
       });
     }
 
     deactivate() {
       // Restores the original material
-      Canvas.updateAll();
+     
     }
   }
 
@@ -785,7 +853,7 @@ interface IChannel {
     description: "Generates a normal map from the height map",
     click() {
       const texture =
-        PbrMaterial.findTexture(CHANNELS.height.id) ??
+        PbrMaterial.findTexture(CHANNELS.height) ??
         Texture.all.find((t) => t.selected);
 
       if (!texture) {
@@ -795,8 +863,12 @@ interface IChannel {
       const normalMap = PbrMaterial.createNormalMap(texture);
 
       if (normalMap) {
-        PbrMaterial.saveTexture("normal", normalMap.uuid);
+        PbrMaterial.saveTexture(CHANNELS.normal, normalMap.uuid);
+        Blockbench.showQuickMessage("Normal map generated", 2000);
+        return;
       }
+
+      Blockbench.showQuickMessage("Failed to generate normal map", 2000);
     },
   });
 
@@ -813,6 +885,7 @@ interface IChannel {
     name: "Decode MER",
     click() {
       const { metalness, emissive, roughness } = PbrMaterial.decodeMer();
+      const projectTextures = getProjectTextures();
 
       if (metalness) {
         const metalnessTexture = new Texture({
@@ -821,8 +894,17 @@ interface IChannel {
           particle: false,
         }).fromDataURL(metalness.toDataURL());
 
-        Project.textures.push(metalnessTexture);
-        PbrMaterial.saveTexture(CHANNELS.metalness.id, metalnessTexture.uuid);
+        projectTextures.push(
+          new TextureLayer(
+            {
+              name: "metalness",
+              data_url: metalness.toDataURL(),
+            },
+            metalnessTexture,
+          ),
+        );
+
+        PbrMaterial.saveTexture(CHANNELS.metalness, metalnessTexture.uuid);
       }
 
       if (emissive) {
@@ -832,8 +914,16 @@ interface IChannel {
           particle: false,
         }).fromDataURL(emissive.toDataURL());
 
-        Project.textures.push(emissiveTexture);
-        PbrMaterial.saveTexture(CHANNELS.emissive.id, emissiveTexture.uuid);
+        projectTextures.push(
+          new TextureLayer(
+            {
+              name: "emissive",
+              data_url: emissive.toDataURL(),
+            },
+            emissiveTexture,
+          ),
+        );
+        PbrMaterial.saveTexture(CHANNELS.emissive, emissiveTexture.uuid);
       }
 
       if (roughness) {
@@ -843,8 +933,16 @@ interface IChannel {
           particle: false,
         }).fromDataURL(roughness.toDataURL());
 
-        Project.textures.push(roughnessTexture);
-        PbrMaterial.saveTexture(CHANNELS.roughness.id, roughnessTexture.uuid);
+        projectTextures.push(
+          new TextureLayer(
+            {
+              name: "roughness",
+              data_url: roughness.toDataURL(),
+            },
+            roughnessTexture,
+          ),
+        );
+        PbrMaterial.saveTexture(CHANNELS.roughness, roughnessTexture.uuid);
       }
     },
   });
@@ -938,7 +1036,7 @@ interface IChannel {
             color:
               (projectColorMap
                 ? pathToName(projectColorMap, false)
-                : formResult.baseColor.hexCode) ?? baseName,
+                : formResult.baseColor?.toHexString()) ?? baseName,
             metalness_emissive_roughness: [
               formResult.metalness ?? 0,
               formResult.emissive ?? 0,
@@ -990,6 +1088,16 @@ interface IChannel {
     return textureSetDialog;
   };
 
+  createTextureSet = new Action(`${PLUGIN_ID}_create_texture_set`, {
+    name: "Create Texture Set",
+    icon: "layers",
+    description:
+      "Creates a texture set JSON file. Generates a MER when metalness, emissive, or roughness channels are set.",
+    click() {
+      createTextureSetDialog();
+    },
+  });
+
   const updateListener = () => {
     if (Settings.get("pbr_active")) {
       pbrPreview.activate();
@@ -999,12 +1107,14 @@ interface IChannel {
   const subscribeToEvents: Array<EventName | string> = [
     "undo",
     "redo",
-    "setup_project",
-    "select_project",
-    "add_texture",
+    // "setup_project",
+    // "select_project",
+    // "add_texture",
+    "finish_edit",
     "finished_edit",
     "update_view",
     "update_texture_selection",
+    "update_faces",
   ];
 
   const enableListeners = () => {
@@ -1249,18 +1359,7 @@ interface IChannel {
       MenuBar.addAction(generateMer, "file.export");
       MenuBar.addAction(generateNormal, "tools");
       MenuBar.addAction(decodeMer, "tools");
-      MenuBar.addAction(
-        new Action(`${PLUGIN_ID}_create_texture_set`, {
-          name: "Create Texture Set",
-          icon: "layers",
-          description:
-            "Creates a texture set JSON file. Generates a MER when metalness, emissive, or roughness channels are set.",
-          click() {
-            createTextureSetDialog();
-          },
-        }),
-        "file.export",
-      );
+      MenuBar.addAction(createTextureSet, "file.export");
 
       MenuBar.addAction(
         new Toggle("toggle_pbr", {
@@ -1285,6 +1384,7 @@ interface IChannel {
       generateMer?.delete();
       decodeMer?.delete();
       styles?.delete();
+      createTextureSet?.delete();
       textureSetDialog?.delete();
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_texture_set`);
