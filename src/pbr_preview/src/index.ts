@@ -807,7 +807,7 @@ interface IChannel {
         return;
       }
 
-      Outliner.elements.forEach((item) => {
+      Project.elements.forEach((item) => {
         if (!(item instanceof Cube)) {
           return;
         }
@@ -831,19 +831,23 @@ interface IChannel {
             projectMaterial
           );
 
-          // Project.materials[texture.uuid].needsUpdate = true;
-
-          // face.cube.faces[key].material = Project.materials[texture.uuid];
-          // face.cube.faces[key].material.needsUpdate = true;
-          (item.mesh as THREE.Mesh).material.push(Project.materials[texture.uuid]);
+          Canvas.updateAllFaces(texture);
         });
-
       });
     }
 
     deactivate() {
-      // Restores the original material
-     
+      // Restore the original material by deactivating all the PBR maps
+      this.activate({
+        aoMap: null,
+        normalMap: null,
+        bumpMap: null,
+        metalnessMap: null,
+        roughnessMap: null,
+        emissiveMap: null,
+        emissive: 0,
+      });
+      Canvas.updateAll();
     }
   }
 
@@ -1109,12 +1113,12 @@ interface IChannel {
     "redo",
     // "setup_project",
     // "select_project",
-    // "add_texture",
+    "add_texture",
     "finish_edit",
     "finished_edit",
-    "update_view",
-    "update_texture_selection",
-    "update_faces",
+    // "update_view",
+    // "update_texture_selection",
+    // "update_faces",
   ];
 
   const enableListeners = () => {
