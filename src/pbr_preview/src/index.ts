@@ -823,7 +823,7 @@ interface IChannel {
           const projectMaterial = Project.materials[texture.uuid];
           const material = PbrMaterial.getMaterial(
             extendMaterial,
-            texture.layers ?? null,
+            texture.layers.filter((layer) => layer.visible) ?? null,
           );
 
           Project.materials[texture.uuid] = THREE.ShaderMaterial.prototype.copy.call(
