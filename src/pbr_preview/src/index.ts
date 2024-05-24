@@ -29,6 +29,7 @@ interface IChannel {
   let createTextureSet: Action;
   let generateMer: Action;
   let generateNormal: Action;
+  let togglePbr: Toggle;
   let pbrPreview: PbrPreview;
   let pbrMode: Mode;
   let pbrDisplaySetting: Setting;
@@ -36,6 +37,8 @@ interface IChannel {
   let materialPanel: Panel;
   let styles: Deletable;
   let textureSetDialog: Dialog;
+  let channelAssignmentSelect: BarSelect;
+  let channelProp: Property;
 
   const PLUGIN_ID = "pbr_preview";
   const PLUGIN_VERSION = "1.0.0";
@@ -94,13 +97,24 @@ interface IChannel {
   };
 
   class PbrMaterial {
-    static merToCanvas(src: Array<Texture | TextureLayer>) {
-      let emissiveMap = PbrMaterial.getTexture(CHANNELS.emissive, src);
-      let roughnessMap = PbrMaterial.getTexture(CHANNELS.roughness, src);
-      let metalnessMap = PbrMaterial.getTexture(CHANNELS.metalness, src);
+    private _scope: Array<Texture | TextureLayer>;
+    private _materialUuid: string;
+
+    constructor(
+      scope: Array<Texture | TextureLayer> | null,
+      materialUuid: string,
+    ) {
+      this._scope = scope ?? getProjectTextures();
+      this._materialUuid = materialUuid;
+    }
+
+    merToCanvas() {
+      let emissiveMap = this.getTexture(CHANNELS.emissive);
+      let roughnessMap = this.getTexture(CHANNELS.roughness);
+      let metalnessMap = this.getTexture(CHANNELS.metalness);
 
       if (!emissiveMap && !roughnessMap && !metalnessMap) {
-        const { metalness, emissive, roughness } = PbrMaterial.decodeMer(src);
+        const { metalness, emissive, roughness } = this.decodeMer();
 
         if (metalness) {
           metalnessMap = PbrMaterial.makePixelatedCanvas(metalness);
@@ -122,20 +136,20 @@ interface IChannel {
       };
     }
 
-    static getMaterial(
-      options: THREE.MeshStandardMaterialParameters = {},
-      src?: Array<Texture | TextureLayer> | null,
-    ) {
-      const { emissiveMap, roughnessMap, metalnessMap } =
-        PbrMaterial.merToCanvas(src ?? getProjectTextures());
+    getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
+      const { emissiveMap, roughnessMap, metalnessMap } = this.merToCanvas();
 
       return new THREE.MeshStandardMaterial({
         map:
-          PbrMaterial.getTexture(CHANNELS.albedo, src) ??
-          PbrMaterial.makePixelatedCanvas(Texture.all[0].canvas),
-        aoMap: PbrMaterial.getTexture(CHANNELS.ao, src),
-        normalMap: PbrMaterial.getTexture(CHANNELS.normal, src),
-        bumpMap: PbrMaterial.getTexture(CHANNELS.height, src),
+          this.getTexture(CHANNELS.albedo) ??
+          PbrMaterial.makePixelatedCanvas(
+            TextureLayer.selected?.canvas ??
+              Texture.all.find((t) => t.selected)?.canvas ??
+              Texture.all[0].canvas,
+          ),
+        aoMap: this.getTexture(CHANNELS.ao),
+        normalMap: this.getTexture(CHANNELS.normal),
+        bumpMap: this.getTexture(CHANNELS.height),
         metalnessMap,
         // metalness: metalnessMap ? 1 : 0,
         roughnessMap,
@@ -175,7 +189,7 @@ interface IChannel {
       return projects[id] ?? {};
     }
 
-    static saveTexture(channel: IChannel, src: string) {
+    saveTexture(channel: IChannel, textureUuid: string) {
       const projects = PbrMaterial.getProjectsData();
       const id = PbrMaterial.projectId();
 
@@ -183,27 +197,35 @@ interface IChannel {
 
       // TODO: Save with project data
 
-      localStorage.setItem(
-        `${PLUGIN_ID}.pbr_textures`,
-        JSON.stringify({
-          ...projects,
-          [id]: {
-            ...projects[id],
-            [key]: src,
+      const project = projects[id];
+      const material = project?.[this._materialUuid];
+
+      if (material) {
+        material[key] = textureUuid;
+      } else {
+        projects[id] = {
+          ...project,
+          [this._materialUuid]: {
+            [key]: textureUuid,
           },
-        }),
+        };
+      }
+
+      localStorage.setItem(
+        `${PLUGIN_ID}_pbr_textures`,
+        JSON.stringify(projects),
       );
     }
 
-    static removeTexture(channel: IChannel) {
+    removeTexture(channel: IChannel) {
       const id = PbrMaterial.projectId();
       const projects = PbrMaterial.getProjectsData();
       const projectData = PbrMaterial.getProjectData();
 
-      delete projectData[channel.id];
+      delete projectData[this._materialUuid][channel.id];
 
       localStorage.setItem(
-        `${PLUGIN_ID}.pbr_textures`,
+        `${PLUGIN_ID}_pbr_textures`,
         JSON.stringify({
           ...projects,
           [id]: projectData,
@@ -211,28 +233,37 @@ interface IChannel {
       );
     }
 
-    static findTexture(
-      name: string | IChannel,
-      src?: Array<Texture | TextureLayer> | null,
-    ): Texture | TextureLayer | null {
+    findTexture(name: string | IChannel): Texture | TextureLayer | null {
       if (!Project) {
         return null;
       }
 
-      const projectData = PbrMaterial.getProjectData();
-      const key = typeof name === "string" ? name : name.id;
-
-      const filenameRegex = new RegExp(`_${key}(\.[^.]+)?$`, "i");
-      const textureSrc = src ?? getProjectTextures();
-
-      return (
-        textureSrc.find(
-          (t: Texture | TextureLayer) =>
-            t.uuid === name ||
-            projectData[key] === t.uuid ||
-            (filenameRegex.test(t.name) && projectData[key] !== NA_CHANNEL),
-        ) ?? null
+      const materialChannel = this._scope.find(
+        (t) => t.channel && (t.channel === name || t.channel === name.id),
       );
+
+      if (materialChannel) {
+        return materialChannel;
+      }
+
+      const channel = typeof name === "string" ? name : name.id;
+
+      const projectData = PbrMaterial.getProjectData();
+      const materialData = projectData[this._materialUuid];
+
+      if (!materialData) {
+        const filenameRegex = new RegExp(`_*${channel}(\.[^.]+)?$`, "i");
+        return this._scope.find((t) => filenameRegex.test(t.name)) ?? null;
+      }
+
+
+      const textureUuid = materialData[channel];
+
+      if (!textureUuid) {
+        return null;
+      }
+
+      return this._scope.find((t) => t.uuid === textureUuid) ?? null;
     }
 
     static makePixelatedCanvas(canvas: HTMLCanvasElement) {
@@ -253,13 +284,10 @@ interface IChannel {
     /**
      * Searches for a texture and creates a canvas element with the texture data if found
      * @param name The name of the texture to search for. Use a channel or a texture name or UUID
-     * @param src An array of textures to search in. Defaults to all textures in the project
+     * @param scope An array of textures to search in. Defaults to all textures in the project
      */
-    static getTexture(
-      name: string | IChannel,
-      src?: Array<Texture | TextureLayer> | null,
-    ) {
-      const texture = PbrMaterial.findTexture(name, src);
+    getTexture(name: string | IChannel) {
+      const texture = this.findTexture(name);
       return texture ? PbrMaterial.makePixelatedCanvas(texture.canvas) : null;
     }
 
@@ -307,17 +335,14 @@ interface IChannel {
       return channelCanvas;
     }
 
-    static decodeMer(
-      src: Array<Texture | TextureLayer> | null = getProjectTextures(),
-      emissiveThreshold = 25.5,
-    ): {
+    decodeMer(emissiveThreshold = 25.5): {
       metalness?: HTMLCanvasElement | null;
       emissive?: HTMLCanvasElement | null;
       emissiveLevel?: HTMLCanvasElement | null;
       roughness?: HTMLCanvasElement | null;
       sss?: HTMLCanvasElement | null;
     } {
-      const texture = PbrMaterial.findTexture("mer", src);
+      const texture = this.findTexture("mer");
 
       if (!texture) {
         return {
@@ -339,7 +364,7 @@ interface IChannel {
       emissive.height = texture.img.height;
 
       // Use emissiveLevel as mask for getting emissive color from albedo channel
-      const albedo = PbrMaterial.findTexture(CHANNELS.albedo);
+      const albedo = this.findTexture(CHANNELS.albedo);
 
       if (albedo) {
         emissive.width = albedo.img.width;
@@ -407,11 +432,11 @@ interface IChannel {
       };
     }
 
-    static createMer() {
-      const metalness = PbrMaterial.findTexture(CHANNELS.metalness);
-      const emissive = PbrMaterial.findTexture(CHANNELS.emissive);
-      const roughness = PbrMaterial.findTexture(CHANNELS.roughness);
-      const sss = PbrMaterial.findTexture("sss");
+    createMer() {
+      const metalness = this.findTexture(CHANNELS.metalness);
+      const emissive = this.findTexture(CHANNELS.emissive);
+      const roughness = this.findTexture(CHANNELS.roughness);
+      const sss = this.findTexture("sss");
 
       const width = Math.max(
         metalness?.img.width ?? 0,
@@ -548,12 +573,15 @@ interface IChannel {
 
       const dataUrl = canvas.toDataURL();
 
-      const normalMapTexture = new Texture({
-        name: `${texture.name}_normal`,
-        saved: false,
-        particle: false,
-        keep_size: true,
-      }).fromDataURL(dataUrl);
+      const normalMapTexture =
+        texture instanceof Texture
+          ? texture
+          : new Texture({
+              name: `${texture.name}_normal`,
+              saved: false,
+              particle: false,
+              keep_size: true,
+            }).fromDataURL(dataUrl);
 
       const normalMapLayer = new TextureLayer(
         {
@@ -574,7 +602,16 @@ interface IChannel {
   }
 
   const exportMer = (cb?: (filePath: string) => void) => {
-    const mer = PbrMaterial.createMer();
+    const selected = Texture.all.find((t) => t.selected);
+
+    if (!selected) {
+      return;
+    }
+
+    const mer = new PbrMaterial(
+      getProjectTextures(),
+      selected.uuid,
+    ).createMer();
 
     if (!mer) {
       return;
@@ -703,6 +740,7 @@ interface IChannel {
       name: "ChannelButton",
       props: {
         channel: Object,
+        material: Object,
       },
       template: /*html*/ `
         <div class="channel-button">
@@ -728,15 +766,20 @@ interface IChannel {
       data(): {
         selectedTexture: Texture | TextureLayer | null;
         projectTextures: TextureLayer[];
+        pbrMaterial: PbrMaterial | null;
       } {
         return {
           selectedTexture: null,
           projectTextures: [],
+          pbrMaterial: null,
         };
       },
       mounted() {
         this.projectTextures = getProjectTextures();
-        this.selectedTexture = PbrMaterial.findTexture(this.channel.id);
+        this.pbrMaterial = new PbrMaterial(
+          this.projectTextures,
+          this.material.uuid,
+        );
       },
       methods: {
         assignId(label: string) {
@@ -752,7 +795,7 @@ interface IChannel {
             return;
           }
 
-          PbrMaterial.saveTexture(this.channel, texture.uuid);
+          this.pbrMaterial?.saveTexture(this.channel, texture.uuid);
           this.selectedTexture = texture;
           activate({
             [this.channel.map]: new THREE.CanvasTexture(
@@ -766,7 +809,7 @@ interface IChannel {
           });
         },
         unsetTexture() {
-          PbrMaterial.saveTexture(this.channel, NA_CHANNEL);
+          this.pbrMaterial?.saveTexture(this.channel, NA_CHANNEL);
           this.selectedTexture = null;
           activate({
             [this.channel.map]: null,
@@ -782,17 +825,24 @@ interface IChannel {
       },
       template: /*html*/ `
         <div>
-          <div v-for="(channel, key) in channels" :key="key">
-            <ChannelButton :channel="channel" />
+          <div v-for="material in materials" :key="material.uuid">
+            <div v-for="(channel, key) in channels" :key="key">
+              <ChannelButton :channel="channel" :material="material" />
+            </div>
           </div>
         </div>
       `,
       data(): {
         channels: Record<string, IChannel>;
+        materials: Array<Texture | TextureLayer>;
       } {
         return {
           channels: CHANNELS,
+          materials: [],
         };
+      },
+      mounted() {
+        this.materials = getProjectTextures();
       },
     });
   };
@@ -821,15 +871,15 @@ interface IChannel {
           }
 
           const projectMaterial = Project.materials[texture.uuid];
-          const material = PbrMaterial.getMaterial(
-            extendMaterial,
-            texture.layers.filter((layer) => layer.visible) ?? null,
-          );
+          const material = new PbrMaterial(
+            texture.layers_enabled
+              ? texture.layers.filter((layer) => layer.visible) ?? null
+              : Project.textures,
+            texture.uuid,
+          ).getMaterial(extendMaterial);
 
-          Project.materials[texture.uuid] = THREE.ShaderMaterial.prototype.copy.call(
-            material,
-            projectMaterial
-          );
+          Project.materials[texture.uuid] =
+            THREE.ShaderMaterial.prototype.copy.call(material, projectMaterial);
 
           Canvas.updateAllFaces(texture);
         });
@@ -856,8 +906,13 @@ interface IChannel {
     name: "Generate Normal Map",
     description: "Generates a normal map from the height map",
     click() {
+      const selected =
+        TextureLayer.selected ?? Texture.all.find((t) => t.selected);
+      const mat = new PbrMaterial(getProjectTextures(), selected.uuid);
+
       const texture =
-        PbrMaterial.findTexture(CHANNELS.height) ??
+        TextureLayer.selected ??
+        mat.findTexture(CHANNELS.height) ??
         Texture.all.find((t) => t.selected);
 
       if (!texture) {
@@ -867,7 +922,7 @@ interface IChannel {
       const normalMap = PbrMaterial.createNormalMap(texture);
 
       if (normalMap) {
-        PbrMaterial.saveTexture(CHANNELS.normal, normalMap.uuid);
+        mat.saveTexture(CHANNELS.normal, normalMap.uuid);
         Blockbench.showQuickMessage("Normal map generated", 2000);
         return;
       }
@@ -888,66 +943,39 @@ interface IChannel {
     icon: "arrow_split",
     name: "Decode MER",
     click() {
-      const { metalness, emissive, roughness } = PbrMaterial.decodeMer();
       const projectTextures = getProjectTextures();
+      const selected =
+        TextureLayer.selected.texture ?? Texture.all.find((t) => t.selected);
 
-      if (metalness) {
-        const metalnessTexture = new Texture({
-          name: "metalness",
-          saved: false,
-          particle: false,
-        }).fromDataURL(metalness.toDataURL());
+      const mat = new PbrMaterial(
+        projectTextures,
+        (selected ?? projectTextures[0]).uuid,
+      );
+      const mer = mat.decodeMer();
+      const merChannels = [
+        CHANNELS.metalness,
+        CHANNELS.emissive,
+        CHANNELS.roughness,
+      ];
 
-        projectTextures.push(
-          new TextureLayer(
-            {
-              name: "metalness",
-              data_url: metalness.toDataURL(),
-            },
-            metalnessTexture,
-          ),
+      merChannels.forEach((channel) => {
+        const key = channel.id as keyof typeof mer;
+        const canvas = mer[key];
+
+        if (!canvas) {
+          return;
+        }
+
+        const layer = new TextureLayer(
+          {
+            name: `${selected?.name}_${key}`,
+            data_url: canvas.toDataURL(),
+          },
+          selected,
         );
-
-        PbrMaterial.saveTexture(CHANNELS.metalness, metalnessTexture.uuid);
-      }
-
-      if (emissive) {
-        const emissiveTexture = new Texture({
-          name: "emissive",
-          saved: false,
-          particle: false,
-        }).fromDataURL(emissive.toDataURL());
-
-        projectTextures.push(
-          new TextureLayer(
-            {
-              name: "emissive",
-              data_url: emissive.toDataURL(),
-            },
-            emissiveTexture,
-          ),
-        );
-        PbrMaterial.saveTexture(CHANNELS.emissive, emissiveTexture.uuid);
-      }
-
-      if (roughness) {
-        const roughnessTexture = new Texture({
-          name: "roughness",
-          saved: false,
-          particle: false,
-        }).fromDataURL(roughness.toDataURL());
-
-        projectTextures.push(
-          new TextureLayer(
-            {
-              name: "roughness",
-              data_url: roughness.toDataURL(),
-            },
-            roughnessTexture,
-          ),
-        );
-        PbrMaterial.saveTexture(CHANNELS.roughness, roughnessTexture.uuid);
-      }
+        projectTextures.push(layer);
+        mat.saveTexture(channel, layer.uuid);
+      });
     },
   });
 
@@ -955,141 +983,139 @@ interface IChannel {
     if (!Project) {
       return;
     }
+    const scope = getProjectTextures();
+    Project.textures.forEach((t) => {
+      const mat = new PbrMaterial(scope, t.uuid);
 
-    const projectNormalMap = PbrMaterial.findTexture(CHANNELS.normal.id)?.name;
-    const projectHeightMap = PbrMaterial.findTexture(CHANNELS.height.id)?.name;
-    const projectColorMap = PbrMaterial.findTexture(CHANNELS.albedo.id)?.name;
-    const projectMetalnessMap = PbrMaterial.findTexture(
-      CHANNELS.metalness.id,
-    )?.name;
-    const projectEmissiveMap = PbrMaterial.findTexture(
-      CHANNELS.emissive.id,
-    )?.name;
-    const projectRoughnessMap = PbrMaterial.findTexture(
-      CHANNELS.roughness.id,
-    )?.name;
+      const projectNormalMap = mat.findTexture(CHANNELS.normal)?.name;
+      const projectHeightMap = mat.findTexture(CHANNELS.height)?.name;
+      const projectColorMap = mat.findTexture(CHANNELS.albedo)?.name;
+      const projectMetalnessMap = mat.findTexture(CHANNELS.metalness)?.name;
+      const projectEmissiveMap = mat.findTexture(CHANNELS.emissive)?.name;
+      const projectRoughnessMap = mat.findTexture(CHANNELS.roughness)?.name;
 
-    const form: DialogOptions["form"] = {};
+      const form: DialogOptions["form"] = {};
 
-    if (!projectColorMap) {
-      form.baseColor = {
-        type: "color",
-        label: "Base Color",
-        value: "#ff00ff",
-      };
-    }
+      if (!projectColorMap) {
+        form.baseColor = {
+          type: "color",
+          label: "Base Color",
+          value: "#ff00ff",
+        };
+      }
 
-    if (!projectMetalnessMap && !projectEmissiveMap && !projectRoughnessMap) {
-      form.metalness = {
-        label: "Metalness",
-        type: "range",
-        min: 0,
-        max: 255,
-        step: 1,
-        value: 0,
-      };
-
-      form.emissive = {
-        label: "Emissive",
-        type: "range",
-        min: 0,
-        max: 255,
-        step: 1,
-        value: 0,
-      };
-
-      form.roughness = {
-        label: "Roughness",
-        type: "range",
-        min: 0,
-        max: 255,
-        step: 1,
-        value: 0,
-      };
-    }
-
-    if (projectNormalMap && projectHeightMap) {
-      form.depthMap = {
-        type: "radio",
-        label: "Depth Map",
-        options: {
-          normal: "Normal Map",
-          heightmap: "Height",
-        },
-        value: "normal",
-      };
-    }
-
-    textureSetDialog = new Dialog(`${PLUGIN_ID}_texture_set`, {
-      id: `${PLUGIN_ID}_texture_set`,
-      title: "Create Texture Set JSON",
-      buttons: ["Create", "Cancel"],
-      form,
-      onConfirm(formResult) {
-        const baseName =
-          Project.model_identifier.length > 0
-            ? Project.model_identifier
-            : Project.name;
-
-        const hasMer =
-          projectMetalnessMap || projectEmissiveMap || projectRoughnessMap;
-
-        const textureSet = {
-          format_version: "1.16.200",
-          "minecraft:texture_set": {
-            color:
-              (projectColorMap
-                ? pathToName(projectColorMap, false)
-                : formResult.baseColor?.toHexString()) ?? baseName,
-            metalness_emissive_roughness: [
-              formResult.metalness ?? 0,
-              formResult.emissive ?? 0,
-              formResult.roughness ?? 255,
-            ],
-          },
+      if (!projectMetalnessMap && !projectEmissiveMap && !projectRoughnessMap) {
+        form.metalness = {
+          label: "Metalness",
+          type: "range",
+          min: 0,
+          max: 255,
+          step: 1,
+          value: 0,
         };
 
-        if (formResult.depthMap === "normal" && projectNormalMap) {
-          textureSet["minecraft:texture_set"].normal = pathToName(
-            projectNormalMap,
-            false,
-          );
-        } else if (
-          (!projectNormalMap || formResult.depthMap === "heightmap") &&
-          projectHeightMap
-        ) {
-          textureSet["minecraft:texture_set"].heightmap = pathToName(
-            projectHeightMap,
-            false,
-          );
-        }
+        form.emissive = {
+          label: "Emissive",
+          type: "range",
+          min: 0,
+          max: 255,
+          step: 1,
+          value: 0,
+        };
 
-        const exportTextureSet = () =>
-          Blockbench.export({
-            content: JSON.stringify(textureSet, null, 2),
-            type: "JSON",
-            name: `${baseName}.texture_set`,
-            extensions: ["json"],
-            resource_id: "texture_set",
-            startpath: Project.export_path,
-          });
+        form.roughness = {
+          label: "Roughness",
+          type: "range",
+          min: 0,
+          max: 255,
+          step: 1,
+          value: 0,
+        };
+      }
 
-        if (hasMer) {
-          exportMer((filePath) => {
-            textureSet["minecraft:texture_set"].metalness_emissive_roughness =
-              pathToName(filePath, false);
-            exportTextureSet();
-          });
-          return;
-        }
+      if (projectNormalMap && projectHeightMap) {
+        form.depthMap = {
+          type: "radio",
+          label: "Depth Map",
+          options: {
+            normal: "Normal Map",
+            heightmap: "Height",
+          },
+          value: "normal",
+        };
+      }
 
-        exportTextureSet();
-      },
+      textureSetDialog = new Dialog(`${PLUGIN_ID}_texture_set`, {
+        id: `${PLUGIN_ID}_texture_set`,
+        title: "Create Texture Set JSON",
+        buttons: ["Create", "Cancel"],
+        form,
+        onConfirm(formResult) {
+          const baseName =
+            Project.model_identifier.length > 0
+              ? Project.model_identifier
+              : Project.name;
+
+          const hasMer =
+            projectMetalnessMap || projectEmissiveMap || projectRoughnessMap;
+
+          const textureSet = {
+            format_version: "1.16.200",
+            "minecraft:texture_set": {
+              color:
+                (projectColorMap
+                  ? pathToName(projectColorMap, false)
+                  : formResult.baseColor?.toHexString()) ?? baseName,
+              metalness_emissive_roughness: [
+                formResult.metalness ?? 0,
+                formResult.emissive ?? 0,
+                formResult.roughness ?? 255,
+              ],
+            },
+          };
+
+          if (formResult.depthMap === "normal" && projectNormalMap) {
+            textureSet["minecraft:texture_set"].normal = pathToName(
+              projectNormalMap,
+              false,
+            );
+          } else if (
+            (!projectNormalMap || formResult.depthMap === "heightmap") &&
+            projectHeightMap
+          ) {
+            textureSet["minecraft:texture_set"].heightmap = pathToName(
+              projectHeightMap,
+              false,
+            );
+          }
+
+          const exportTextureSet = () =>
+            Blockbench.export({
+              content: JSON.stringify(textureSet, null, 2),
+              type: "JSON",
+              name: `${baseName}.texture_set`,
+              extensions: ["json"],
+              resource_id: "texture_set",
+              startpath: Project.export_path,
+            });
+
+          if (hasMer) {
+            exportMer((filePath) => {
+              textureSet["minecraft:texture_set"].metalness_emissive_roughness =
+                pathToName(filePath, false);
+              exportTextureSet();
+            });
+            return;
+          }
+
+          exportTextureSet();
+        },
+      });
+
+      textureSetDialog.show();
+
+      return textureSetDialog;
     });
-
-    textureSetDialog.show();
-
-    return textureSetDialog;
   };
 
   createTextureSet = new Action(`${PLUGIN_ID}_create_texture_set`, {
@@ -1151,6 +1177,74 @@ interface IChannel {
       disableListeners();
     },
   });
+
+  togglePbr = new Toggle("toggle_pbr", {
+    name: "PBR Preview",
+    description: "Toggle PBR Preview",
+    icon: "tonality",
+    category: "view",
+    condition: {
+      modes: ["edit", "paint", "animate"],
+    },
+    linked_setting: "pbr_active",
+    click() {
+      Blockbench.showQuickMessage(
+        `PBR Preview is now ${pbrDisplaySetting.value ? "enabled" : "disabled"}`,
+        2000,
+      );
+    },
+  });
+
+  const layersPanelToolbar: Toolbar[] = Panels.layers.toolbars;
+
+  const initLayerToolbar = () => {
+    channelProp = new Property(TextureLayer, "enum", "channel", {
+      default: NA_CHANNEL,
+      values: Object.keys(CHANNELS).map((key) => CHANNELS[key].id),
+    });
+
+    const channelIds = Object.keys(CHANNELS);
+
+    channelIds.map((channel) => {
+      new Property(ModelProject, "string", `pbr_${channel}`, {
+        default: NA_CHANNEL,
+        values: getProjectTextures().map((t) => t.uuid),
+      });
+    });
+
+    channelAssignmentSelect = new BarSelect(
+      `${PLUGIN_ID}_layers_channel_assignment`,
+      {
+        condition: () => Modes.paint && TextureLayer.selected,
+        category: "pbr",
+        options: Object.fromEntries(
+          Object.entries(CHANNELS).map(([key, channel]) => [
+            key,
+            channel.label,
+          ]),
+        ),
+        onChange() {
+          const texture = TextureLayer.selected;
+
+          if (!texture || !this.value || !Project) {
+            return;
+          }
+
+          texture.extend({ channel: this.value });
+
+          Project[`pbr_${this.value}`] = texture.uuid;
+
+          // new PbrMaterial(null, texture.texture.uuid).saveTexture(
+          //   CHANNELS[texture.channel],
+          //   texture.uuid,
+          // );
+          pbrPreview.activate();
+        },
+      },
+    );
+
+    layersPanelToolbar[0].add(channelAssignmentSelect, 4);
+  };
 
   BBPlugin.register(PLUGIN_ID, {
     version: PLUGIN_VERSION,
@@ -1364,21 +1458,9 @@ interface IChannel {
       MenuBar.addAction(generateNormal, "tools");
       MenuBar.addAction(decodeMer, "tools");
       MenuBar.addAction(createTextureSet, "file.export");
+      MenuBar.addAction(togglePbr, "view");
 
-      MenuBar.addAction(
-        new Toggle("toggle_pbr", {
-          name: "PBR Preview",
-          description: "Toggle PBR Preview",
-          icon: "tonality",
-          category: "view",
-          condition: {
-            modes: ["edit", "paint", "animate"],
-          },
-          linked_setting: "pbr_active",
-          click() {},
-        }),
-        "view",
-      );
+      initLayerToolbar();
     },
     onunload() {
       pbrMode?.delete();
@@ -1386,14 +1468,18 @@ interface IChannel {
       pbrDisplaySetting?.delete();
       materialPanel?.delete();
       generateMer?.delete();
+      generateNormal?.delete();
+      togglePbr?.delete();
       decodeMer?.delete();
       styles?.delete();
       createTextureSet?.delete();
       textureSetDialog?.delete();
+      channelAssignmentSelect?.delete();
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_mer`);
       MenuBar.removeAction(`file.export.${PLUGIN_ID}_create_texture_set`);
       MenuBar.removeAction(`tools.${PLUGIN_ID}_generate_normal`);
       disableListeners();
+      layersPanelToolbar[0].remove(channelAssignmentSelect);
     },
   });
 })();
