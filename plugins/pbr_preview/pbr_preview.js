@@ -138,17 +138,6 @@
           ...options
         });
       }
-      static projectId() {
-        return Project ? Project.getDisplayName() : "material";
-      }
-      static getProjectsData() {
-        return Project ? Project.pbr_materials ?? {} : {};
-      }
-      static getProjectData() {
-        const id = PbrMaterial.projectId();
-        const projects = PbrMaterial.getProjectsData();
-        return projects[id] ?? {};
-      }
       saveTexture(channel, textureUuid) {
         if (!Project) {
           return;
@@ -631,7 +620,7 @@
         return textureSetDialog;
       });
     };
-    let activatePbr = new Action(`${PLUGIN_ID}_activate_pbr`, {
+    let activatePbrAction = new Action(`${PLUGIN_ID}_activate_pbr`, {
       name: "Activate PBR",
       icon: "panorama_photosphere",
       category: "preview",
@@ -743,21 +732,47 @@
         }
       });
     });
+    let unassignChannel = new Action(`${PLUGIN_ID}_unassign_channel`, {
+      icon: "cancel",
+      name: "Unassign Channel",
+      description: "Unassign the selected layer from the channel",
+      category: "textures",
+      click() {
+        const layer = TextureLayer.selected;
+        if (!layer || !Project) {
+          return;
+        }
+        Undo.initEdit({ layers: [layer] });
+        const { texture, channel } = layer;
+        texture.updateChangesAfterEdit();
+        Project.pbr_materials[texture.uuid] = {};
+        layer.channel = NA_CHANNEL;
+        Undo.finishEdit("Unassign channel");
+        Blockbench.showQuickMessage(
+          `Unassigned "${layer.name}" from ${channel} channel`,
+          2e3
+        );
+        applyPbrMaterial();
+      }
+    });
     const subscribeToEvents = [
       "undo",
       "redo",
       "add_texture",
       "finish_edit",
-      "finished_edit"
+      "finished_edit",
+      "load_project",
+      "select_preview_scene"
     ];
+    const renderPbrScene = () => Settings.get("pbr_active") && applyPbrMaterial();
     const enableListeners = () => {
       subscribeToEvents.forEach((event) => {
-        Blockbench.addListener(event, applyPbrMaterial);
+        Blockbench.addListener(event, renderPbrScene);
       });
     };
     const disableListeners = () => {
       subscribeToEvents.forEach((event) => {
-        Blockbench.removeListener(event, applyPbrMaterial);
+        Blockbench.removeListener(event, renderPbrScene);
       });
     };
     pbrDisplaySetting = new Setting("pbr_active", {
@@ -777,19 +792,19 @@
       }
     });
     const onload = () => {
-      Blockbench.on("select_preview_scene", applyPbrMaterial);
       correctLightsSetting = new Setting("display_settings_correct_lights", {
         category: "preview",
         name: "Correct Lights",
         description: "Corrects the lighting in the preview for PBR materials",
         type: "boolean",
-        value: true,
+        value: false,
         icon: "light_mode",
         onChange(value) {
-          Preview.selected.renderer.physicallyCorrectLights = value;
-          if (value) {
-            applyPbrMaterial();
+          if (!Settings.get("pbr_active")) {
+            return;
           }
+          Preview.selected.renderer.physicallyCorrectLights = value;
+          applyPbrMaterial();
         }
       });
       tonemappingSetting = new Setting("display_settings_tone_mapping", {
@@ -798,6 +813,7 @@
         type: "select",
         value: THREE.NoToneMapping,
         icon: "palette",
+        condition: () => (Modes.id === "edit" || Modes.id === "paint") && Settings.get("pbr_active"),
         options: {
           [THREE.NoToneMapping]: "None",
           [THREE.LinearToneMapping]: "Linear",
@@ -806,6 +822,9 @@
           [THREE.ACESFilmicToneMapping]: "ACES"
         },
         onChange(value) {
+          if (!Settings.get("pbr_active")) {
+            return;
+          }
           Preview.selected.renderer.toneMapping = Number(value);
           applyPbrMaterial();
         }
@@ -817,9 +836,12 @@
         category: "view",
         condition: () => Modes.id === "edit" || Modes.id === "paint",
         linked_setting: "pbr_active",
+        default: false,
         click() {
+        },
+        onChange(value) {
           Blockbench.showQuickMessage(
-            `PBR Preview is now ${pbrDisplaySetting.value ? "enabled" : "disabled"}`,
+            `PBR Preview is now ${value ? "enabled" : "disabled"}`,
             2e3
           );
         }
@@ -831,6 +853,9 @@
         value: 1,
         icon: "exposure",
         onChange(value) {
+          if (!Settings.get("pbr_active")) {
+            return;
+          }
           Preview.selected.renderer.toneMappingExposure = Math.max(
             -2,
             Math.min(2, Number(value))
@@ -846,7 +871,14 @@
         max: 2,
         step: 0.1,
         value: 1,
+        condition: {
+          modes: ["edit", "paint", "animate"],
+          project: true
+        },
         onChange({ value }) {
+          if (!Settings.get("pbr_active")) {
+            return;
+          }
           Preview.selected.renderer.toneMappingExposure = Math.max(
             -2,
             Math.min(2, Number(value))
@@ -860,16 +892,23 @@
         description: "Corrects the lighting in the preview",
         icon: "fluorescent",
         linked_setting: "display_settings_correct_lights",
-        click() {
+        onChange(value) {
           Blockbench.showQuickMessage(
-            `Correct Lights is now ${correctLightsSetting.value ? "enabled" : "disabled"}`,
+            `Physically corrected lighting is now ${value ? "enabled" : "disabled"}`,
             2e3
           );
+        },
+        click() {
         }
       });
       channelMenu = new Menu(
         `${PLUGIN_ID}_channel_menu`,
-        Object.keys(CHANNELS).map((key) => `${PLUGIN_ID}_assign_channel_${key}`),
+        [
+          ...Object.keys(CHANNELS).map(
+            (key) => `${PLUGIN_ID}_assign_channel_${key}`
+          ),
+          ...[`${PLUGIN_ID}_unassign_channel`]
+        ],
         {
           onOpen() {
             applyPbrMaterial();
@@ -908,6 +947,9 @@
           }
         },
         onChange({ value }) {
+          if (!Settings.get("pbr_active")) {
+            return;
+          }
           Preview.selected.renderer.toneMapping = Number(value);
           applyPbrMaterial();
         }
@@ -959,10 +1001,6 @@
       Object.entries(channelActions).forEach(([key, action]) => {
         MenuBar.addAction(action, "tools");
       });
-      enableListeners();
-      if (Settings.get("pbr_active")) {
-        applyPbrMaterial();
-      }
     };
     const onunload = () => {
       Object.entries(channelActions).forEach(([key, action]) => {
@@ -990,7 +1028,7 @@
       toggleCorrectLights?.delete();
       correctLightsSetting?.delete();
       tonemappingSetting?.delete();
-      activatePbr?.delete();
+      activatePbrAction?.delete();
       deactivatePbr?.delete();
     };
     BBPlugin.register(PLUGIN_ID, {

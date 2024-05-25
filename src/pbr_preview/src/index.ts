@@ -197,51 +197,7 @@ interface IChannel {
       });
     }
 
-    static projectId() {
-      return Project ? Project.getDisplayName() : "material";
-    }
-
-    static getProjectsData() {
-      // TODO: Load from Blockbench project data
-      // const projectsJson = localStorage.getItem(`${PLUGIN_ID}.pbr_textures`);
-      // return projectsJson ? JSON.parse(projectsJson) : {};
-
-      return Project ? Project.pbr_materials ?? {} : {};
-    }
-
-    static getProjectData() {
-      const id = PbrMaterial.projectId();
-      const projects = PbrMaterial.getProjectsData();
-      return projects[id] ?? {};
-    }
-
     saveTexture(channel: IChannel, textureUuid: string) {
-      // const projects = PbrMaterial.getProjectsData();
-      // const id = PbrMaterial.projectId();
-
-      // const key = channel.id;
-
-      // // TODO: Save with project data
-
-      // const project = projects[id];
-      // const material = project?.[this._materialUuid];
-
-      // if (material) {
-      //   material[key] = textureUuid;
-      // } else {
-      //   projects[id] = {
-      //     ...project,
-      //     [this._materialUuid]: {
-      //       [key]: textureUuid,
-      //     },
-      //   };
-      // }
-
-      // localStorage.setItem(
-      //   `${PLUGIN_ID}_pbr_textures`,
-      //   JSON.stringify(projects),
-      // );
-
       if (!Project) {
         return;
       }
@@ -713,7 +669,10 @@ interface IChannel {
 
         const projectMaterial = Project.materials[texture.uuid];
 
-        if (projectMaterial.isShaderMaterial && !Project.bb_materials[texture.uuid]) {
+        if (
+          projectMaterial.isShaderMaterial &&
+          !Project.bb_materials[texture.uuid]
+        ) {
           Project.bb_materials[texture.uuid] = projectMaterial;
         }
 
@@ -916,7 +875,7 @@ interface IChannel {
   // Actions
   //
 
-  let activatePbr = new Action(`${PLUGIN_ID}_activate_pbr`, {
+  let activatePbrAction = new Action(`${PLUGIN_ID}_activate_pbr`, {
     name: "Activate PBR",
     icon: "panorama_photosphere",
     category: "preview",
@@ -1061,6 +1020,55 @@ interface IChannel {
     });
   });
 
+  let unassignChannel = new Action(`${PLUGIN_ID}_unassign_channel`, {
+    icon: "cancel",
+    name: "Unassign Channel",
+    description: "Unassign the selected layer from the channel",
+    category: "textures",
+    click() {
+      const layer = TextureLayer.selected;
+
+      if (!layer || !Project) {
+        return;
+      }
+
+      Undo.initEdit({ layers: [layer] });
+
+      const { texture, channel } = layer;
+
+      texture.updateChangesAfterEdit();
+
+      // if (Project.pbr_materials[texture.uuid]) {
+      //   delete Project.pbr_materials[texture.uuid][layer.channel];
+      // }
+
+      // Project.materials[texture.uuid] = new PbrMaterial(
+      //   getProjectTextures(),
+      //   texture.uuid,
+      // ).getMaterial({
+      //   ...Project.materials[texture.uuid],
+      //   [channel]: null,
+      // });
+
+      // new PbrMaterial(getProjectTextures(), texture.uuid).saveTexture(
+      //   channel,
+      //   "",
+      // );
+
+      Project.pbr_materials[texture.uuid] = {}
+
+      layer.channel = NA_CHANNEL;
+      Undo.finishEdit("Unassign channel");
+
+      Blockbench.showQuickMessage(
+        `Unassigned "${layer.name}" from ${channel} channel`,
+        2000,
+      );
+
+      applyPbrMaterial();
+    },
+  });
+
   //
   // Events
   //
@@ -1071,23 +1079,23 @@ interface IChannel {
     "add_texture",
     "finish_edit",
     "finished_edit",
+    "load_project",
+    "select_preview_scene",
   ];
+
+  const renderPbrScene = () => Settings.get("pbr_active") && applyPbrMaterial();
 
   const enableListeners = () => {
     subscribeToEvents.forEach((event) => {
-      Blockbench.addListener(event as EventName, applyPbrMaterial);
+      Blockbench.addListener(event as EventName, renderPbrScene);
     });
   };
 
   const disableListeners = () => {
     subscribeToEvents.forEach((event) => {
-      Blockbench.removeListener(event as EventName, applyPbrMaterial);
+      Blockbench.removeListener(event as EventName, renderPbrScene);
     });
   };
-
-  //
-  // Menus
-  //
 
   pbrDisplaySetting = new Setting("pbr_active", {
     category: "preview",
@@ -1111,8 +1119,6 @@ interface IChannel {
   //
 
   const onload = () => {
-    Blockbench.on("select_preview_scene", applyPbrMaterial);
-
     //
     // Settings
     //
@@ -1122,14 +1128,16 @@ interface IChannel {
       name: "Correct Lights",
       description: "Corrects the lighting in the preview for PBR materials",
       type: "boolean",
-      value: true,
+      value: false,
       icon: "light_mode",
       onChange(value) {
+        if (!Settings.get("pbr_active")) {
+          return;
+        }
+
         Preview.selected.renderer.physicallyCorrectLights = value;
 
-        if (value) {
-          applyPbrMaterial();
-        }
+        applyPbrMaterial();
       },
     });
 
@@ -1139,6 +1147,9 @@ interface IChannel {
       type: "select",
       value: THREE.NoToneMapping,
       icon: "palette",
+      condition: () =>
+        (Modes.id === "edit" || Modes.id === "paint") &&
+        Settings.get("pbr_active"),
       options: {
         [THREE.NoToneMapping]: "None",
         [THREE.LinearToneMapping]: "Linear",
@@ -1147,6 +1158,10 @@ interface IChannel {
         [THREE.ACESFilmicToneMapping]: "ACES",
       },
       onChange(value) {
+        if (!Settings.get("pbr_active")) {
+          return;
+        }
+
         Preview.selected.renderer.toneMapping = Number(value);
 
         applyPbrMaterial();
@@ -1160,9 +1175,11 @@ interface IChannel {
       category: "view",
       condition: () => Modes.id === "edit" || Modes.id === "paint",
       linked_setting: "pbr_active",
-      click() {
+      default: false,
+      click() {},
+      onChange(value) {
         Blockbench.showQuickMessage(
-          `PBR Preview is now ${pbrDisplaySetting.value ? "enabled" : "disabled"}`,
+          `PBR Preview is now ${value ? "enabled" : "disabled"}`,
           2000,
         );
       },
@@ -1175,6 +1192,10 @@ interface IChannel {
       value: 1,
       icon: "exposure",
       onChange(value) {
+        if (!Settings.get("pbr_active")) {
+          return;
+        }
+
         Preview.selected.renderer.toneMappingExposure = Math.max(
           -2,
           Math.min(2, Number(value)),
@@ -1191,7 +1212,15 @@ interface IChannel {
       max: 2,
       step: 0.1,
       value: 1,
+      condition: {
+        modes: ["edit", "paint", "animate"],
+        project: true,
+      },
       onChange({ value }) {
+        if (!Settings.get("pbr_active")) {
+          return;
+        }
+
         Preview.selected.renderer.toneMappingExposure = Math.max(
           -2,
           Math.min(2, Number(value)),
@@ -1207,17 +1236,23 @@ interface IChannel {
       description: "Corrects the lighting in the preview",
       icon: "fluorescent",
       linked_setting: "display_settings_correct_lights",
-      click() {
+      onChange(value) {
         Blockbench.showQuickMessage(
-          `Correct Lights is now ${correctLightsSetting.value ? "enabled" : "disabled"}`,
+          `Physically corrected lighting is now ${value ? "enabled" : "disabled"}`,
           2000,
         );
       },
+      click() {},
     });
 
     channelMenu = new Menu(
       `${PLUGIN_ID}_channel_menu`,
-      Object.keys(CHANNELS).map((key) => `${PLUGIN_ID}_assign_channel_${key}`),
+      [
+        ...Object.keys(CHANNELS).map(
+          (key) => `${PLUGIN_ID}_assign_channel_${key}`,
+        ),
+        ...[`${PLUGIN_ID}_unassign_channel`],
+      ],
       {
         onOpen() {
           applyPbrMaterial();
@@ -1258,6 +1293,10 @@ interface IChannel {
         },
       },
       onChange({ value }) {
+        if (!Settings.get("pbr_active")) {
+          return;
+        }
+
         Preview.selected.renderer.toneMapping = Number(value);
 
         applyPbrMaterial();
@@ -1314,11 +1353,7 @@ interface IChannel {
 
     // BarItems.pbr.addLabel(true, togglePbr);
 
-    enableListeners();
-
-    if (Settings.get("pbr_active")) {
-      applyPbrMaterial();
-    }
+    // enableListeners();
   };
 
   //
@@ -1352,7 +1387,7 @@ interface IChannel {
     toggleCorrectLights?.delete();
     correctLightsSetting?.delete();
     tonemappingSetting?.delete();
-    activatePbr?.delete();
+    activatePbrAction?.delete();
     deactivatePbr?.delete();
   };
 
