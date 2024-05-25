@@ -39,8 +39,6 @@ interface IChannel {
   let pbrMode: Mode;
   let pbrDisplaySetting: Setting;
   let displaySettingsPanel: Panel;
-  let materialInspectionPanel: Panel;
-  let styles: Deletable;
   let textureSetDialog: Dialog;
   let channelAssignmentSelect: BarSelect;
   let channelProp: Property;
@@ -52,8 +50,7 @@ interface IChannel {
   let exposureSetting: Setting;
   let correctLightsSetting: Setting;
   let tonemappingSetting: Setting;
-  let displaySettingsToolbar: Toolbar;
-  let materialInspectionToolbar: Toolbar;
+  let pbrMaterialsProp: Property;
   let projectMaterialsProp: Property;
 
   const channelActions: Record<IChannel["id"], Action> = {};
@@ -197,7 +194,7 @@ interface IChannel {
       });
     }
 
-    saveTexture(channel: IChannel, textureUuid: string) {
+    saveTexture(channel: IChannel, { uuid, extend }: Texture | TextureLayer) {
       if (!Project) {
         return;
       }
@@ -210,10 +207,14 @@ interface IChannel {
         Project.pbr_materials[this._materialUuid] = {};
       }
 
-      Project.pbr_materials[this._materialUuid][channel.id] = textureUuid;
+      Project.pbr_materials[this._materialUuid][channel.id] = uuid;
+      extend({ channel: channel.id });
     }
 
-    findTexture(name: string | IChannel): Texture | TextureLayer | null {
+    findTexture(
+      name: string | IChannel,
+      inference = true,
+    ): Texture | TextureLayer | null {
       if (!Project) {
         return null;
       }
@@ -234,12 +235,12 @@ interface IChannel {
       Project.pbr_materials ??= {};
       const materialData = Project.pbr_materials[this._materialUuid];
 
-      if (!materialData) {
+      if (!materialData && inference) {
         const filenameRegex = new RegExp(`_*${channel}(\.[^.]+)?$`, "i");
         return this._scope.find((t) => filenameRegex.test(t.name)) ?? null;
       }
 
-      const textureUuid = materialData[channel];
+      const textureUuid = materialData?.[channel];
 
       if (!textureUuid) {
         return null;
@@ -324,7 +325,7 @@ interface IChannel {
       roughness?: HTMLCanvasElement | null;
       sss?: HTMLCanvasElement | null;
     } {
-      const texture = this.findTexture("mer");
+      const texture = this.findTexture("mer", true);
 
       if (!texture) {
         return {
@@ -414,11 +415,11 @@ interface IChannel {
       };
     }
 
-    createMer() {
-      const metalness = this.findTexture(CHANNELS.metalness);
-      const emissive = this.findTexture(CHANNELS.emissive);
-      const roughness = this.findTexture(CHANNELS.roughness);
-      const sss = this.findTexture("sss");
+    createMer(inference = false) {
+      const metalness = this.findTexture(CHANNELS.metalness, inference);
+      const emissive = this.findTexture(CHANNELS.emissive, inference);
+      const roughness = this.findTexture(CHANNELS.roughness, inference);
+      const sss = this.findTexture("sss", false);
 
       const width = Math.max(
         metalness?.img.width ?? 0,
@@ -453,7 +454,8 @@ interface IChannel {
       const roughnessCanvas = roughness?.img
         ? PbrMaterial.extractChannel(roughness, "b")
         : null;
-      const sssCanvas = sss?.img ? PbrMaterial.extractChannel(sss, "a") : null;
+      const sssCanvas =
+        sss && sss?.img ? PbrMaterial.extractChannel(sss, "a") : null;
 
       const metalnessData =
         metalnessCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ??
@@ -590,7 +592,7 @@ interface IChannel {
     values: Object.keys(CHANNELS).map((key) => CHANNELS[key].id),
   });
 
-  projectMaterialsProp = new Property(ModelProject, "object", "pbr_materials", {
+  pbrMaterialsProp = new Property(ModelProject, "object", "pbr_materials", {
     default: {},
   });
 
@@ -606,9 +608,13 @@ interface IChannel {
     }
 
     const mer = new PbrMaterial(
-      getProjectTextures(),
+      selected.layers_enabled
+        ? selected.layers
+        : Project
+          ? Project.textures
+          : null,
       selected.uuid,
-    ).createMer();
+    ).createMer(false);
 
     if (!mer) {
       return;
@@ -620,10 +626,7 @@ interface IChannel {
       }
 
       const [name, startpath] = Project
-        ? [
-            `${Project.model_identifier.length > 0 ? Project.model_identifier : Project.name}_mer`,
-            Project.export_path,
-          ]
+        ? [`${Project.getDisplayName()}_mer`, Project.export_path]
         : ["mer"];
 
       Blockbench.export(
@@ -914,7 +917,7 @@ interface IChannel {
       const normalMap = PbrMaterial.createNormalMap(texture);
 
       if (normalMap) {
-        mat.saveTexture(CHANNELS.normal, normalMap.uuid);
+        mat.saveTexture(CHANNELS.normal, normalMap);
         Blockbench.showQuickMessage("Normal map generated", 2000);
         return;
       }
@@ -966,7 +969,7 @@ interface IChannel {
           selected,
         );
         // projectTextures.push(layer);
-        mat.saveTexture(channel, layer.uuid);
+        mat.saveTexture(channel, layer);
       });
     },
   });
@@ -1055,7 +1058,7 @@ interface IChannel {
       //   "",
       // );
 
-      Project.pbr_materials[texture.uuid] = {}
+      Project.pbr_materials[texture.uuid] = {};
 
       layer.channel = NA_CHANNEL;
       Undo.finishEdit("Unassign channel");
@@ -1236,6 +1239,7 @@ interface IChannel {
       description: "Corrects the lighting in the preview",
       icon: "fluorescent",
       linked_setting: "display_settings_correct_lights",
+      default: false,
       onChange(value) {
         Blockbench.showQuickMessage(
           `Physically corrected lighting is now ${value ? "enabled" : "disabled"}`,
@@ -1264,6 +1268,7 @@ interface IChannel {
       icon: "texture",
       name: "Assign to PBR Channel",
       description: "Assign the selected layer to a channel",
+      category: "textures",
       condition: () => Modes.paint && TextureLayer.selected,
       click(event) {
         channelMenu.open(event as MouseEvent);
@@ -1275,6 +1280,7 @@ interface IChannel {
       name: "Tone Mapping",
       description: "Select the tone mapping function",
       icon: "palette",
+      value: THREE.NoToneMapping,
       options: {
         [THREE.NoToneMapping]: {
           name: "No Tone Mapping",
@@ -1315,10 +1321,13 @@ interface IChannel {
             `${PLUGIN_ID}_correct_lights`,
             `${PLUGIN_ID}_show_channel_menu`,
           ],
+          name: "PBR",
         }),
         new Toolbar(`${PLUGIN_ID}_display_settings_toolbar`, {
           id: `${PLUGIN_ID}_display_settings_toolbar`,
           children: [`${PLUGIN_ID}_tonemapping`, `${PLUGIN_ID}_exposure`],
+          // condition: () => Settings.get("pbr_active"),
+          name: "Display Settings",
         }),
       ],
       display_condition: {
@@ -1346,9 +1355,10 @@ interface IChannel {
     MenuBar.addAction(decodeMer, "tools");
     MenuBar.addAction(createTextureSet, "file.export");
     MenuBar.addAction(togglePbr, "view");
+    MenuBar.addAction(toggleCorrectLights, "preview");
 
     Object.entries(channelActions).forEach(([key, action]) => {
-      MenuBar.addAction(action, "tools");
+      MenuBar.addAction(action, "image");
     });
 
     // BarItems.pbr.addLabel(true, togglePbr);
@@ -1389,6 +1399,9 @@ interface IChannel {
     tonemappingSetting?.delete();
     activatePbrAction?.delete();
     deactivatePbr?.delete();
+    unassignChannel?.delete();
+    projectMaterialsProp?.delete();
+    pbrMaterialsProp?.delete();
   };
 
   //

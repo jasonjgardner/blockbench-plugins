@@ -11,8 +11,6 @@
     let pbrMode;
     let pbrDisplaySetting;
     let displaySettingsPanel;
-    let materialInspectionPanel;
-    let styles;
     let textureSetDialog;
     let channelAssignmentSelect;
     let channelProp;
@@ -24,8 +22,7 @@
     let exposureSetting;
     let correctLightsSetting;
     let tonemappingSetting;
-    let displaySettingsToolbar;
-    let materialInspectionToolbar;
+    let pbrMaterialsProp;
     let projectMaterialsProp;
     const channelActions = {};
     const PLUGIN_ID = "pbr_preview";
@@ -138,7 +135,7 @@
           ...options
         });
       }
-      saveTexture(channel, textureUuid) {
+      saveTexture(channel, { uuid, extend }) {
         if (!Project) {
           return;
         }
@@ -148,9 +145,10 @@
         if (!Project.pbr_materials[this._materialUuid]) {
           Project.pbr_materials[this._materialUuid] = {};
         }
-        Project.pbr_materials[this._materialUuid][channel.id] = textureUuid;
+        Project.pbr_materials[this._materialUuid][channel.id] = uuid;
+        extend({ channel: channel.id });
       }
-      findTexture(name) {
+      findTexture(name, inference = true) {
         if (!Project) {
           return null;
         }
@@ -163,11 +161,11 @@
         const channel = typeof name === "string" ? name : name.id;
         Project.pbr_materials ??= {};
         const materialData = Project.pbr_materials[this._materialUuid];
-        if (!materialData) {
+        if (!materialData && inference) {
           const filenameRegex = new RegExp(`_*${channel}(.[^.]+)?$`, "i");
           return this._scope.find((t) => filenameRegex.test(t.name)) ?? null;
         }
-        const textureUuid = materialData[channel];
+        const textureUuid = materialData?.[channel];
         if (!textureUuid) {
           return null;
         }
@@ -223,7 +221,7 @@
         return channelCanvas;
       }
       decodeMer(emissiveThreshold = 25.5) {
-        const texture = this.findTexture("mer");
+        const texture = this.findTexture("mer", true);
         if (!texture) {
           return {
             metalness: null,
@@ -297,11 +295,11 @@
           sss
         };
       }
-      createMer() {
-        const metalness = this.findTexture(CHANNELS.metalness);
-        const emissive = this.findTexture(CHANNELS.emissive);
-        const roughness = this.findTexture(CHANNELS.roughness);
-        const sss = this.findTexture("sss");
+      createMer(inference = false) {
+        const metalness = this.findTexture(CHANNELS.metalness, inference);
+        const emissive = this.findTexture(CHANNELS.emissive, inference);
+        const roughness = this.findTexture(CHANNELS.roughness, inference);
+        const sss = this.findTexture("sss", false);
         const width = Math.max(
           metalness?.img.width ?? 0,
           emissive?.img.width ?? 0,
@@ -324,7 +322,7 @@
         const metalnessCanvas = metalness?.img ? PbrMaterial.extractChannel(metalness, "r") : null;
         const emissiveCanvas = emissive?.img ? PbrMaterial.extractChannel(emissive, "g") : null;
         const roughnessCanvas = roughness?.img ? PbrMaterial.extractChannel(roughness, "b") : null;
-        const sssCanvas = sss?.img ? PbrMaterial.extractChannel(sss, "a") : null;
+        const sssCanvas = sss && sss?.img ? PbrMaterial.extractChannel(sss, "a") : null;
         const metalnessData = metalnessCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ?? new ImageData(width, height);
         const emissiveData = emissiveCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ?? new ImageData(width, height);
         const roughnessData = roughnessCanvas?.getContext("2d")?.getImageData(0, 0, width, height) ?? new ImageData(width, height);
@@ -420,7 +418,7 @@
       default: NA_CHANNEL,
       values: Object.keys(CHANNELS).map((key) => CHANNELS[key].id)
     });
-    projectMaterialsProp = new Property(ModelProject, "object", "pbr_materials", {
+    pbrMaterialsProp = new Property(ModelProject, "object", "pbr_materials", {
       default: {}
     });
     projectMaterialsProp = new Property(ModelProject, "object", "bb_materials", {
@@ -432,9 +430,9 @@
         return;
       }
       const mer = new PbrMaterial(
-        getProjectTextures(),
+        selected.layers_enabled ? selected.layers : Project ? Project.textures : null,
         selected.uuid
-      ).createMer();
+      ).createMer(false);
       if (!mer) {
         return;
       }
@@ -442,10 +440,7 @@
         if (!blob) {
           return;
         }
-        const [name, startpath] = Project ? [
-          `${Project.model_identifier.length > 0 ? Project.model_identifier : Project.name}_mer`,
-          Project.export_path
-        ] : ["mer"];
+        const [name, startpath] = Project ? [`${Project.getDisplayName()}_mer`, Project.export_path] : ["mer"];
         Blockbench.export(
           {
             content: await blob.arrayBuffer(),
@@ -649,7 +644,7 @@
         }
         const normalMap = PbrMaterial.createNormalMap(texture);
         if (normalMap) {
-          mat.saveTexture(CHANNELS.normal, normalMap.uuid);
+          mat.saveTexture(CHANNELS.normal, normalMap);
           Blockbench.showQuickMessage("Normal map generated", 2e3);
           return;
         }
@@ -692,7 +687,7 @@
             },
             selected
           );
-          mat.saveTexture(channel, layer.uuid);
+          mat.saveTexture(channel, layer);
         });
       }
     });
@@ -892,6 +887,7 @@
         description: "Corrects the lighting in the preview",
         icon: "fluorescent",
         linked_setting: "display_settings_correct_lights",
+        default: false,
         onChange(value) {
           Blockbench.showQuickMessage(
             `Physically corrected lighting is now ${value ? "enabled" : "disabled"}`,
@@ -919,6 +915,7 @@
         icon: "texture",
         name: "Assign to PBR Channel",
         description: "Assign the selected layer to a channel",
+        category: "textures",
         condition: () => Modes.paint && TextureLayer.selected,
         click(event) {
           channelMenu.open(event);
@@ -929,6 +926,7 @@
         name: "Tone Mapping",
         description: "Select the tone mapping function",
         icon: "palette",
+        value: THREE.NoToneMapping,
         options: {
           [THREE.NoToneMapping]: {
             name: "No Tone Mapping"
@@ -965,11 +963,14 @@
               "toggle_pbr",
               `${PLUGIN_ID}_correct_lights`,
               `${PLUGIN_ID}_show_channel_menu`
-            ]
+            ],
+            name: "PBR"
           }),
           new Toolbar(`${PLUGIN_ID}_display_settings_toolbar`, {
             id: `${PLUGIN_ID}_display_settings_toolbar`,
-            children: [`${PLUGIN_ID}_tonemapping`, `${PLUGIN_ID}_exposure`]
+            children: [`${PLUGIN_ID}_tonemapping`, `${PLUGIN_ID}_exposure`],
+            // condition: () => Settings.get("pbr_active"),
+            name: "Display Settings"
           })
         ],
         display_condition: {
@@ -998,8 +999,9 @@
       MenuBar.addAction(decodeMer, "tools");
       MenuBar.addAction(createTextureSet, "file.export");
       MenuBar.addAction(togglePbr, "view");
+      MenuBar.addAction(toggleCorrectLights, "preview");
       Object.entries(channelActions).forEach(([key, action]) => {
-        MenuBar.addAction(action, "tools");
+        MenuBar.addAction(action, "image");
       });
     };
     const onunload = () => {
@@ -1030,6 +1032,9 @@
       tonemappingSetting?.delete();
       activatePbrAction?.delete();
       deactivatePbr?.delete();
+      unassignChannel?.delete();
+      projectMaterialsProp?.delete();
+      pbrMaterialsProp?.delete();
     };
     BBPlugin.register(PLUGIN_ID, {
       version: PLUGIN_VERSION,
