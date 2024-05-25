@@ -701,7 +701,7 @@ interface IChannel {
         return;
       }
 
-      const materials: THREE.MeshStandardMaterial[] = [];
+      // const materials: THREE.MeshStandardMaterial[] = [];
 
       Object.keys(item.faces).forEach((key) => {
         const face = item.faces[key];
@@ -711,7 +711,11 @@ interface IChannel {
           return;
         }
 
-        // const projectMaterial = Project.materials[texture.uuid];
+        const projectMaterial = Project.materials[texture.uuid];
+
+        if (projectMaterial.isShaderMaterial && !Project.bb_materials[texture.uuid]) {
+          Project.bb_materials[texture.uuid] = projectMaterial;
+        }
 
         const material = new PbrMaterial(
           texture.layers_enabled
@@ -720,22 +724,22 @@ interface IChannel {
           texture.uuid,
         ).getMaterial(materialParams);
 
-        materials.push(material);
+        // materials.push(material);
 
-        // Project.materials[texture.uuid] =
-        //   THREE.ShaderMaterial.prototype.copy.call(material, projectMaterial);
+        Project.materials[texture.uuid] =
+          THREE.ShaderMaterial.prototype.copy.call(material, projectMaterial);
 
-        // Canvas.updateAllFaces(texture);
+        Canvas.updateAllFaces(texture);
       });
 
-      item.getMesh().material = materials.allEqual(materials[0])
-        ? materials[0]
-        : materials;
+      // item.getMesh().material = materials.allEqual(materials[0])
+      //   ? materials[0]
+      //   : materials;
     });
   };
 
   const disablePbr = () => {
-    if (!Project) {
+    if (!Project || !Project.bb_materials) {
       return;
     }
 
@@ -752,13 +756,13 @@ interface IChannel {
           return;
         }
 
-        const material = Project.materials[texture.uuid];
+        const projectMaterial = Project.bb_materials[texture.uuid];
 
-        if (!material) {
+        if (!projectMaterial) {
           return;
         }
 
-        item.getMesh().material = material;
+        Project.materials[texture.uuid] = projectMaterial;
       });
     });
 

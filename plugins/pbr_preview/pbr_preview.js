@@ -479,24 +479,27 @@
         if (!(item instanceof Cube)) {
           return;
         }
-        const materials = [];
         Object.keys(item.faces).forEach((key) => {
           const face = item.faces[key];
           const texture = face.getTexture();
           if (!texture) {
             return;
           }
+          const projectMaterial = Project.materials[texture.uuid];
+          if (projectMaterial.isShaderMaterial && !Project.bb_materials[texture.uuid]) {
+            Project.bb_materials[texture.uuid] = projectMaterial;
+          }
           const material = new PbrMaterial(
             texture.layers_enabled ? texture.layers.filter((layer) => layer.visible) ?? null : Project.textures,
             texture.uuid
           ).getMaterial(materialParams);
-          materials.push(material);
+          Project.materials[texture.uuid] = THREE.ShaderMaterial.prototype.copy.call(material, projectMaterial);
+          Canvas.updateAllFaces(texture);
         });
-        item.getMesh().material = materials.allEqual(materials[0]) ? materials[0] : materials;
       });
     };
     const disablePbr = () => {
-      if (!Project) {
+      if (!Project || !Project.bb_materials) {
         return;
       }
       Project.elements.forEach((item) => {
@@ -509,11 +512,11 @@
           if (!texture) {
             return;
           }
-          const material = Project.materials[texture.uuid];
-          if (!material) {
+          const projectMaterial = Project.bb_materials[texture.uuid];
+          if (!projectMaterial) {
             return;
           }
-          item.getMesh().material = material;
+          Project.materials[texture.uuid] = projectMaterial;
         });
       });
       Canvas.updateAll();
