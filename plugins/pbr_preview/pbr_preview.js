@@ -440,7 +440,10 @@
         if (!blob) {
           return;
         }
-        const [name, startpath] = Project ? [`${Project.getDisplayName()}_mer`, Project.export_path] : ["mer"];
+        const [name, startpath] = Project ? [
+          `${selected.name ?? Project.getDisplayName()}_mer`,
+          Project.export_path
+        ] : ["mer"];
         Blockbench.export(
           {
             content: await blob.arrayBuffer(),
@@ -512,12 +515,21 @@
       const scope = getProjectTextures();
       Project.textures.forEach((t) => {
         const mat = new PbrMaterial(scope, t.uuid);
-        const projectNormalMap = mat.findTexture(CHANNELS.normal)?.name;
-        const projectHeightMap = mat.findTexture(CHANNELS.height)?.name;
-        const projectColorMap = mat.findTexture(CHANNELS.albedo)?.name;
-        const projectMetalnessMap = mat.findTexture(CHANNELS.metalness)?.name;
-        const projectEmissiveMap = mat.findTexture(CHANNELS.emissive)?.name;
-        const projectRoughnessMap = mat.findTexture(CHANNELS.roughness)?.name;
+        const projectNormalMap = mat.findTexture(CHANNELS.normal, false)?.name;
+        const projectHeightMap = mat.findTexture(CHANNELS.height, false)?.name;
+        const projectColorMap = mat.findTexture(CHANNELS.albedo, false)?.name;
+        const projectMetalnessMap = mat.findTexture(
+          CHANNELS.metalness,
+          false
+        )?.name;
+        const projectEmissiveMap = mat.findTexture(
+          CHANNELS.emissive,
+          false
+        )?.name;
+        const projectRoughnessMap = mat.findTexture(
+          CHANNELS.roughness,
+          false
+        )?.name;
         const form = {};
         if (!projectColorMap) {
           form.baseColor = {
@@ -717,6 +729,13 @@
           if (!Project.pbr_materials[texture.uuid]) {
             Project.pbr_materials[texture.uuid] = {};
           }
+          Object.entries(Project.pbr_materials[texture.uuid]).forEach(
+            ([assignedChannel, assignedLayerUuid]) => {
+              if (assignedLayerUuid === layer.uuid) {
+                delete Project.pbr_materials[texture.uuid][assignedChannel];
+              }
+            }
+          );
           Project.pbr_materials[texture.uuid][key] = layer.uuid;
           Undo.finishEdit("Change channel assignment");
           Blockbench.showQuickMessage(

@@ -626,7 +626,10 @@ interface IChannel {
       }
 
       const [name, startpath] = Project
-        ? [`${Project.getDisplayName()}_mer`, Project.export_path]
+        ? [
+            `${selected.name ?? Project.getDisplayName()}_mer`,
+            Project.export_path,
+          ]
         : ["mer"];
 
       Blockbench.export(
@@ -743,12 +746,21 @@ interface IChannel {
     Project.textures.forEach((t) => {
       const mat = new PbrMaterial(scope, t.uuid);
 
-      const projectNormalMap = mat.findTexture(CHANNELS.normal)?.name;
-      const projectHeightMap = mat.findTexture(CHANNELS.height)?.name;
-      const projectColorMap = mat.findTexture(CHANNELS.albedo)?.name;
-      const projectMetalnessMap = mat.findTexture(CHANNELS.metalness)?.name;
-      const projectEmissiveMap = mat.findTexture(CHANNELS.emissive)?.name;
-      const projectRoughnessMap = mat.findTexture(CHANNELS.roughness)?.name;
+      const projectNormalMap = mat.findTexture(CHANNELS.normal, false)?.name;
+      const projectHeightMap = mat.findTexture(CHANNELS.height, false)?.name;
+      const projectColorMap = mat.findTexture(CHANNELS.albedo, false)?.name;
+      const projectMetalnessMap = mat.findTexture(
+        CHANNELS.metalness,
+        false,
+      )?.name;
+      const projectEmissiveMap = mat.findTexture(
+        CHANNELS.emissive,
+        false,
+      )?.name;
+      const projectRoughnessMap = mat.findTexture(
+        CHANNELS.roughness,
+        false,
+      )?.name;
 
       const form: DialogOptions["form"] = {};
 
@@ -806,7 +818,7 @@ interface IChannel {
         title: "Create Texture Set JSON",
         buttons: ["Create", "Cancel"],
         form,
-        onConfirm(formResult) {
+        onConfirm(formResult: Record<string, any>) {
           const baseName =
             Project.model_identifier.length > 0
               ? Project.model_identifier
@@ -1009,6 +1021,15 @@ interface IChannel {
           Project.pbr_materials[texture.uuid] = {};
         }
 
+        // If the layer uuid is already assigned to another channel, unassign it first
+        Object.entries(Project.pbr_materials[texture.uuid]).forEach(
+          ([assignedChannel, assignedLayerUuid]) => {
+            if (assignedLayerUuid === layer.uuid) {
+              delete Project.pbr_materials[texture.uuid][assignedChannel];
+            }
+          },
+        );
+
         Project.pbr_materials[texture.uuid][key] = layer.uuid;
 
         Undo.finishEdit("Change channel assignment");
@@ -1040,23 +1061,6 @@ interface IChannel {
       const { texture, channel } = layer;
 
       texture.updateChangesAfterEdit();
-
-      // if (Project.pbr_materials[texture.uuid]) {
-      //   delete Project.pbr_materials[texture.uuid][layer.channel];
-      // }
-
-      // Project.materials[texture.uuid] = new PbrMaterial(
-      //   getProjectTextures(),
-      //   texture.uuid,
-      // ).getMaterial({
-      //   ...Project.materials[texture.uuid],
-      //   [channel]: null,
-      // });
-
-      // new PbrMaterial(getProjectTextures(), texture.uuid).saveTexture(
-      //   channel,
-      //   "",
-      // );
 
       Project.pbr_materials[texture.uuid] = {};
 
