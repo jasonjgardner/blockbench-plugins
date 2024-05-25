@@ -34,13 +34,11 @@ interface IChannel {
   let createTextureSet: Action;
   let generateMer: Action;
   let generateNormal: Action;
-  let assignChannel: Action;
+  let unassignChannel: Action;
   let togglePbr: Toggle;
-  let pbrMode: Mode;
   let pbrDisplaySetting: Setting;
   let displaySettingsPanel: Panel;
   let textureSetDialog: Dialog;
-  let channelAssignmentSelect: BarSelect;
   let channelProp: Property;
   let channelMenu: Menu;
   let showChannelMenu: Action;
@@ -52,6 +50,8 @@ interface IChannel {
   let tonemappingSetting: Setting;
   let pbrMaterialsProp: Property;
   let projectMaterialsProp: Property;
+  let activatePbrAction: Action;
+  let deactivatePbr: Action;
 
   const channelActions: Record<IChannel["id"], Action> = {};
 
@@ -822,7 +822,7 @@ interface IChannel {
           const baseName =
             Project.model_identifier.length > 0
               ? Project.model_identifier
-              : Project.name;
+              : Project.getDisplayName();
 
           const hasMer =
             projectMetalnessMap || projectEmissiveMap || projectRoughnessMap;
@@ -858,14 +858,20 @@ interface IChannel {
           }
 
           const exportTextureSet = () =>
-            Blockbench.export({
-              content: JSON.stringify(textureSet, null, 2),
-              type: "JSON",
-              name: `${baseName}.texture_set`,
-              extensions: ["json"],
-              resource_id: "texture_set",
-              startpath: Project.export_path,
-            });
+            Blockbench.export(
+              {
+                content: JSON.stringify(textureSet, null, 2),
+                type: "JSON",
+                name: `${baseName}.texture_set`,
+                extensions: ["json"],
+                resource_id: "texture_set",
+                startpath: Project.export_path,
+              },
+              () => {
+                Blockbench.showQuickMessage("Texture set created", 2000);
+                textureSetDialog.hide();
+              },
+            );
 
           if (hasMer) {
             exportMer((filePath) => {
@@ -878,6 +884,7 @@ interface IChannel {
 
           exportTextureSet();
         },
+        cancelIndex: 1,
       });
 
       textureSetDialog.show();
@@ -885,196 +892,6 @@ interface IChannel {
       return textureSetDialog;
     });
   };
-
-  //
-  // Actions
-  //
-
-  let activatePbrAction = new Action(`${PLUGIN_ID}_activate_pbr`, {
-    name: "Activate PBR",
-    icon: "panorama_photosphere",
-    category: "preview",
-    click() {
-      applyPbrMaterial();
-    },
-  });
-
-  let deactivatePbr = new Action(`${PLUGIN_ID}_deactivate_pbr`, {
-    name: "Deactivate PBR",
-    icon: "panorama",
-    category: "preview",
-    click() {
-      disablePbr();
-    },
-  });
-
-  generateNormal = new Action(`${PLUGIN_ID}_generate_normal`, {
-    icon: "altitude",
-    name: "Generate Normal Map",
-    description: "Generates a normal map from the height map",
-    click() {
-      const selected =
-        TextureLayer.selected ?? Texture.all.find((t) => t.selected);
-      const mat = new PbrMaterial(getProjectTextures(), selected.uuid);
-
-      const texture =
-        TextureLayer.selected ??
-        Texture.all.find((t) => t.selected) ??
-        mat.findTexture(CHANNELS.height);
-
-      if (!texture) {
-        return;
-      }
-
-      const normalMap = PbrMaterial.createNormalMap(texture);
-
-      if (normalMap) {
-        mat.saveTexture(CHANNELS.normal, normalMap);
-        Blockbench.showQuickMessage("Normal map generated", 2000);
-        return;
-      }
-
-      Blockbench.showQuickMessage("Failed to generate normal map", 2000);
-    },
-  });
-
-  generateMer = new Action(`${PLUGIN_ID}_create_mer`, {
-    icon: "lightbulb_circle",
-    name: "Generate MER",
-    click() {
-      exportMer();
-    },
-  });
-
-  decodeMer = new Action(`${PLUGIN_ID}_decode_mer`, {
-    icon: "arrow_split",
-    name: "Decode MER",
-    click() {
-      const projectTextures = getProjectTextures();
-      const selected =
-        TextureLayer.selected?.texture ?? Texture.all.find((t) => t.selected);
-
-      const mat = new PbrMaterial(
-        projectTextures,
-        (selected ?? projectTextures[0]).uuid,
-      );
-      const mer = mat.decodeMer();
-      const merChannels = [
-        CHANNELS.metalness,
-        CHANNELS.emissive,
-        CHANNELS.roughness,
-      ];
-
-      merChannels.forEach((channel) => {
-        const key = channel.id as keyof typeof mer;
-        const canvas = mer[key];
-
-        if (!canvas) {
-          return;
-        }
-
-        const layer = new TextureLayer(
-          {
-            name: `${selected?.name}_${key}`,
-            data_url: canvas.toDataURL(),
-          },
-          selected,
-        );
-        // projectTextures.push(layer);
-        mat.saveTexture(channel, layer);
-      });
-    },
-  });
-
-  createTextureSet = new Action(`${PLUGIN_ID}_create_texture_set`, {
-    name: "Create Texture Set",
-    icon: "layers",
-    description:
-      "Creates a texture set JSON file. Generates a MER when metalness, emissive, or roughness channels are set.",
-    click() {
-      createTextureSetDialog();
-    },
-  });
-
-  Object.entries(CHANNELS).forEach(([key, channel]) => {
-    channelActions[key] = new Action(`${PLUGIN_ID}_assign_channel_${key}`, {
-      icon: channel.icon ?? "tv_options_edit_channels",
-      name: `Assign to ${channel.label.toLocaleLowerCase()} channel`,
-      description: `Assign the selected layer to the ${channel.label} channel`,
-      category: "textures",
-      click(e) {
-        const layer = TextureLayer.selected;
-
-        if (!layer || !Project) {
-          return;
-        }
-
-        Undo.initEdit({ layers: [layer] });
-
-        layer.extend({ channel: key });
-
-        const texture = layer.texture;
-
-        texture.updateChangesAfterEdit();
-
-        if (!Project.pbr_materials[texture.uuid]) {
-          Project.pbr_materials[texture.uuid] = {};
-        }
-
-        // If the layer uuid is already assigned to another channel, unassign it first
-        Object.entries(Project.pbr_materials[texture.uuid]).forEach(
-          ([assignedChannel, assignedLayerUuid]) => {
-            if (assignedLayerUuid === layer.uuid) {
-              delete Project.pbr_materials[texture.uuid][assignedChannel];
-            }
-          },
-        );
-
-        Project.pbr_materials[texture.uuid][key] = layer.uuid;
-
-        Undo.finishEdit("Change channel assignment");
-
-        Blockbench.showQuickMessage(
-          `Assigned "${layer.name}" to ${channel.label} channel`,
-          2000,
-        );
-
-        applyPbrMaterial();
-      },
-    });
-  });
-
-  let unassignChannel = new Action(`${PLUGIN_ID}_unassign_channel`, {
-    icon: "cancel",
-    name: "Unassign Channel",
-    description: "Unassign the selected layer from the channel",
-    category: "textures",
-    click() {
-      const layer = TextureLayer.selected;
-
-      if (!layer || !Project) {
-        return;
-      }
-
-      Undo.initEdit({ layers: [layer] });
-
-      const { texture, channel } = layer;
-
-      texture.updateChangesAfterEdit();
-
-      Project.pbr_materials[texture.uuid] = {};
-
-      layer.channel = NA_CHANNEL;
-      Undo.finishEdit("Unassign channel");
-
-      Blockbench.showQuickMessage(
-        `Unassigned "${layer.name}" from ${channel} channel`,
-        2000,
-      );
-
-      applyPbrMaterial();
-    },
-  });
 
   //
   // Events
@@ -1104,23 +921,6 @@ interface IChannel {
     });
   };
 
-  pbrDisplaySetting = new Setting("pbr_active", {
-    category: "preview",
-    name: "Enable PBR Preview",
-    type: "boolean",
-    value: false,
-    icon: "tonality",
-    onChange(value) {
-      if (value) {
-        applyPbrMaterial();
-        enableListeners();
-        return;
-      }
-      disablePbr();
-      disableListeners();
-    },
-  });
-
   //
   // Setup
   //
@@ -1129,6 +929,22 @@ interface IChannel {
     //
     // Settings
     //
+    pbrDisplaySetting = new Setting("pbr_active", {
+      category: "preview",
+      name: "Enable PBR Preview",
+      type: "boolean",
+      value: false,
+      icon: "tonality",
+      onChange(value) {
+        if (value) {
+          applyPbrMaterial();
+          enableListeners();
+          return;
+        }
+        disablePbr();
+        disableListeners();
+      },
+    });
 
     correctLightsSetting = new Setting("display_settings_correct_lights", {
       category: "preview",
@@ -1170,6 +986,196 @@ interface IChannel {
         }
 
         Preview.selected.renderer.toneMapping = Number(value);
+
+        applyPbrMaterial();
+      },
+    });
+
+    //
+    // Actions
+    //
+
+    activatePbrAction = new Action(`${PLUGIN_ID}_activate_pbr`, {
+      name: "Activate PBR",
+      icon: "panorama_photosphere",
+      category: "preview",
+      click() {
+        applyPbrMaterial();
+      },
+    });
+
+    deactivatePbr = new Action(`${PLUGIN_ID}_deactivate_pbr`, {
+      name: "Deactivate PBR",
+      icon: "panorama",
+      category: "preview",
+      click() {
+        disablePbr();
+      },
+    });
+
+    generateNormal = new Action(`${PLUGIN_ID}_generate_normal`, {
+      icon: "altitude",
+      name: "Generate Normal Map",
+      description: "Generates a normal map from the height map",
+      click() {
+        const selected =
+          TextureLayer.selected ?? Texture.all.find((t) => t.selected);
+        const mat = new PbrMaterial(getProjectTextures(), selected.uuid);
+
+        const texture =
+          TextureLayer.selected ??
+          Texture.all.find((t) => t.selected) ??
+          mat.findTexture(CHANNELS.height);
+
+        if (!texture) {
+          return;
+        }
+
+        const normalMap = PbrMaterial.createNormalMap(texture);
+
+        if (normalMap) {
+          mat.saveTexture(CHANNELS.normal, normalMap);
+          Blockbench.showQuickMessage("Normal map generated", 2000);
+          return;
+        }
+
+        Blockbench.showQuickMessage("Failed to generate normal map", 2000);
+      },
+    });
+
+    generateMer = new Action(`${PLUGIN_ID}_create_mer`, {
+      icon: "lightbulb_circle",
+      name: "Generate MER",
+      click() {
+        exportMer();
+      },
+    });
+
+    decodeMer = new Action(`${PLUGIN_ID}_decode_mer`, {
+      icon: "arrow_split",
+      name: "Decode MER",
+      click() {
+        const projectTextures = getProjectTextures();
+        const selected =
+          TextureLayer.selected?.texture ?? Texture.all.find((t) => t.selected);
+
+        const mat = new PbrMaterial(
+          projectTextures,
+          (selected ?? projectTextures[0]).uuid,
+        );
+        const mer = mat.decodeMer();
+        const merChannels = [
+          CHANNELS.metalness,
+          CHANNELS.emissive,
+          CHANNELS.roughness,
+        ];
+
+        merChannels.forEach((channel) => {
+          const key = channel.id as keyof typeof mer;
+          const canvas = mer[key];
+
+          if (!canvas) {
+            return;
+          }
+
+          const layer = new TextureLayer(
+            {
+              name: `${selected?.name}_${key}`,
+              data_url: canvas.toDataURL(),
+            },
+            selected,
+          );
+          // projectTextures.push(layer);
+          mat.saveTexture(channel, layer);
+        });
+      },
+    });
+
+    createTextureSet = new Action(`${PLUGIN_ID}_create_texture_set`, {
+      name: "Create Texture Set",
+      icon: "layers",
+      description:
+        "Creates a texture set JSON file. Generates a MER when metalness, emissive, or roughness channels are set.",
+      click() {
+        createTextureSetDialog();
+      },
+    });
+
+    Object.entries(CHANNELS).forEach(([key, channel]) => {
+      channelActions[key] = new Action(`${PLUGIN_ID}_assign_channel_${key}`, {
+        icon: channel.icon ?? "tv_options_edit_channels",
+        name: `Assign to ${channel.label.toLocaleLowerCase()} channel`,
+        description: `Assign the selected layer to the ${channel.label} channel`,
+        category: "textures",
+        click(e) {
+          const layer = TextureLayer.selected;
+
+          if (!layer || !Project) {
+            return;
+          }
+
+          Undo.initEdit({ layers: [layer] });
+
+          layer.extend({ channel: key });
+
+          const texture = layer.texture;
+
+          texture.updateChangesAfterEdit();
+
+          if (!Project.pbr_materials[texture.uuid]) {
+            Project.pbr_materials[texture.uuid] = {};
+          }
+
+          // If the layer uuid is already assigned to another channel, unassign it first
+          Object.entries(Project.pbr_materials[texture.uuid]).forEach(
+            ([assignedChannel, assignedLayerUuid]) => {
+              if (assignedLayerUuid === layer.uuid) {
+                delete Project.pbr_materials[texture.uuid][assignedChannel];
+              }
+            },
+          );
+
+          Project.pbr_materials[texture.uuid][key] = layer.uuid;
+
+          Undo.finishEdit("Change channel assignment");
+
+          Blockbench.showQuickMessage(
+            `Assigned "${layer.name}" to ${channel.label} channel`,
+            2000,
+          );
+
+          applyPbrMaterial();
+        },
+      });
+    });
+
+    unassignChannel = new Action(`${PLUGIN_ID}_unassign_channel`, {
+      icon: "cancel",
+      name: "Unassign Channel",
+      description: "Unassign the selected layer from the channel",
+      category: "textures",
+      click() {
+        const layer = TextureLayer.selected;
+
+        if (!layer || !Project) {
+          return;
+        }
+
+        Undo.initEdit({ layers: [layer] });
+
+        const { texture, channel } = layer;
+
+        texture.updateChangesAfterEdit();
+
+        Project.pbr_materials[texture.uuid] = {};
+
+        layer.channel = NA_CHANNEL;
+        Undo.finishEdit("Unassign channel");
+
+        Blockbench.showQuickMessage(
+          `Unassigned "${layer.name}" from ${channel} channel`,
+          2000,
+        );
 
         applyPbrMaterial();
       },
@@ -1365,9 +1371,7 @@ interface IChannel {
       MenuBar.addAction(action, "image");
     });
 
-    // BarItems.pbr.addLabel(true, togglePbr);
-
-    // enableListeners();
+    enableListeners();
   };
 
   //
@@ -1385,14 +1389,12 @@ interface IChannel {
 
     displaySettingsPanel?.delete();
     textureSetDialog?.delete();
-    pbrMode?.delete();
     pbrDisplaySetting?.delete();
     generateMer?.delete();
     generateNormal?.delete();
     togglePbr?.delete();
     decodeMer?.delete();
     createTextureSet?.delete();
-    channelAssignmentSelect?.delete();
     channelProp?.delete();
     showChannelMenu?.delete();
     exposureSetting?.delete();
