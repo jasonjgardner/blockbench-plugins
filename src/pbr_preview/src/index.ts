@@ -594,10 +594,12 @@ interface IChannel {
 
   pbrMaterialsProp = new Property(ModelProject, "object", "pbr_materials", {
     default: {},
+    exposed: false,
   });
 
   projectMaterialsProp = new Property(ModelProject, "object", "bb_materials", {
     default: {},
+    exposed: false,
   });
 
   const exportMer = (cb?: (filePath: string) => void) => {
@@ -1025,9 +1027,10 @@ interface IChannel {
         const texture =
           TextureLayer.selected ??
           Texture.all.find((t) => t.selected) ??
-          mat.findTexture(CHANNELS.height);
+          mat.findTexture(CHANNELS.height, true);
 
         if (!texture) {
+          Blockbench.showQuickMessage("No height map found", 2000);
           return;
         }
 
