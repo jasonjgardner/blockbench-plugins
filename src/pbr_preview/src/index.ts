@@ -934,9 +934,11 @@ interface IChannel {
     pbrDisplaySetting = new Setting("pbr_active", {
       category: "preview",
       name: "Enable PBR Preview",
-      type: "boolean",
-      value: false,
+      description: "Enables PBR preview in the editor",
+      type: "toggle",
+      default_value: false,
       icon: "tonality",
+      launch_setting: true,
       onChange(value) {
         if (value) {
           applyPbrMaterial();
@@ -952,8 +954,8 @@ interface IChannel {
       category: "preview",
       name: "Correct Lights",
       description: "Corrects the lighting in the preview for PBR materials",
-      type: "boolean",
-      value: false,
+      type: "toggle",
+      default_value: false,
       icon: "light_mode",
       onChange(value) {
         if (!Settings.get("pbr_active")) {
@@ -969,8 +971,9 @@ interface IChannel {
     tonemappingSetting = new Setting("display_settings_tone_mapping", {
       category: "preview",
       name: "Tone Mapping",
+      description: "Changes the tone mapping of the preview",
       type: "select",
-      value: THREE.NoToneMapping,
+      default_value: THREE.NoToneMapping,
       icon: "palette",
       condition: () =>
         (Modes.id === "edit" || Modes.id === "paint") &&
@@ -1001,13 +1004,15 @@ interface IChannel {
       name: "Activate PBR",
       icon: "panorama_photosphere",
       category: "preview",
-      click() {
-        applyPbrMaterial();
-      },
+      description: "Applies PBR materials to the preview",
+      linked_setting: "pbr_active",
+      click() {},
     });
 
     deactivatePbr = new Action(`${PLUGIN_ID}_deactivate_pbr`, {
       name: "Deactivate PBR",
+      description: "Deactivates PBR materials in the preview",
+      condition: () => Settings.get("pbr_active"),
       icon: "panorama",
       category: "preview",
       click() {
@@ -1204,9 +1209,13 @@ interface IChannel {
     exposureSetting = new Setting("display_settings_exposure", {
       category: "preview",
       name: "Exposure",
-      type: "boolean",
-      value: 1,
+      description: "Adjusts the exposure of the scene",
+      type: "number",
+      default_value: 1,
       icon: "exposure",
+      step: 0.1,
+      min: -2,
+      max: 2,
       onChange(value) {
         if (!Settings.get("pbr_active")) {
           return;
@@ -1227,8 +1236,8 @@ interface IChannel {
       min: -2,
       max: 2,
       step: 0.1,
-      value: 1,
-      condition: {
+      value: Settings.get("display_settings_exposure") ?? 1,
+      display_condition: {
         modes: ["edit", "paint", "animate"],
         project: true,
       },
@@ -1237,10 +1246,7 @@ interface IChannel {
           return;
         }
 
-        Preview.selected.renderer.toneMappingExposure = Math.max(
-          -2,
-          Math.min(2, Number(value)),
-        );
+        exposureSetting.set(value);
       },
     });
 
@@ -1428,7 +1434,9 @@ interface IChannel {
     variant: "both",
     await_loading: true,
     new_repository_format: true,
-    website: "https://github.com/jasonjgardner/blockbench-plugins",
+    repository: "https://github.com/jasonjgardner/blockbench-plugins",
+    has_changelog: true,
+    min_version: "4.10.1",
     onload,
     onunload,
   });
