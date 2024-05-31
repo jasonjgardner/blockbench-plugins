@@ -1059,12 +1059,14 @@ interface ILightrParams {
     return canvas.toDataURL();
   };
 
-  const bakeTextures = (params: ILightrParams, directions = 8) => {
+  const bakeTextures = (
+    params: ILightrParams,
+    directions = 8,
+    blendEmissive = false,
+  ) => {
     if (!Project) {
       return;
     }
-
-    debugger;
 
     const selected = Project.selected_texture;
 
@@ -1099,11 +1101,55 @@ interface ILightrParams {
       layers_enabled: true,
     }).fromDataURL(bakedImages[0].toDataURL());
 
+    const addEmissive = blendEmissive
+      ? (canvas: HTMLCanvasElement) => {
+          const emissive = mat.findTexture(CHANNELS.emissive);
+
+          if (!emissive) {
+            return canvas;
+          }
+
+          const emissiveCanvas = emissive.canvas;
+          const emissiveCtx = emissiveCanvas.getContext("2d");
+
+          if (!emissiveCtx) {
+            return canvas;
+          }
+
+          const width = Math.max(
+            canvas.width,
+            emissiveCanvas.width,
+            Project ? Project.texture_width : 16,
+          );
+          const height = Math.max(
+            canvas.height,
+            emissiveCanvas.height,
+            Project ? Project.texture_height : 16,
+          );
+
+          const mergedCanvas = document.createElement("canvas");
+          mergedCanvas.width = width;
+          mergedCanvas.height = height;
+
+          const mergedCtx = mergedCanvas.getContext("2d");
+
+          if (!mergedCtx) {
+            return canvas;
+          }
+
+          mergedCtx.drawImage(canvas, 0, 0);
+          mergedCtx.globalCompositeOperation = "screen";
+          mergedCtx.drawImage(emissiveCanvas, 0, 0);
+
+          return mergedCanvas;
+        }
+      : (canvas: HTMLCanvasElement) => canvas;
+
     bakedImages.forEach((image, idx) => {
       const layer = new TextureLayer(
         {
           name: `baked_${idx + 1}`,
-          data_url: image.toDataURL(),
+          data_url: addEmissive(image).toDataURL(),
         },
         bakedTexture,
       );
@@ -1465,6 +1511,11 @@ interface ILightrParams {
           max: 360,
           step: 1,
         },
+        blendEmissive: {
+          type: "checkbox",
+          label: "Blend Emissive",
+          value: false,
+        },
       },
       onConfirm(formResult: Record<string, any>) {
         const ambientLight = new THREE.Color(
@@ -1481,6 +1532,7 @@ interface ILightrParams {
             minLightIntensity: Number(formResult.minLightIntensity),
           },
           formResult.directions ?? 8,
+          formResult.blendEmissive ?? false,
         );
       },
     });
