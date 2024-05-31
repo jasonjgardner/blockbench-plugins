@@ -926,7 +926,9 @@ interface ILightrParams {
 
       const [name, startpath] = Project
         ? [
-            baseName ? `${baseName}_mer` : `${selected.name ?? Project.getDisplayName()}_mer`,
+            baseName
+              ? `${baseName}_mer`
+              : `${selected.name ?? Project.getDisplayName()}_mer`,
             Project.export_path,
           ]
         : ["mer"];
@@ -1298,12 +1300,13 @@ interface ILightrParams {
             (formResult.depthMap === "normal" && projectNormalMap) ||
             (!projectHeightMap && projectNormalMap)
           ) {
-            textureSet["minecraft:texture_set"].normal = `${baseName}_normal`
+            textureSet["minecraft:texture_set"].normal = `${baseName}_normal`;
           } else if (
             (!projectNormalMap || formResult.depthMap === "heightmap") &&
             projectHeightMap
           ) {
-            textureSet["minecraft:texture_set"].heightmap = `${baseName}_heightmap`
+            textureSet["minecraft:texture_set"].heightmap =
+              `${baseName}_heightmap`;
           }
 
           const exportDepthMap = (cb: () => void) => {
@@ -1311,12 +1314,11 @@ interface ILightrParams {
               return cb();
             }
 
-            const useNormalMap = formResult.depthMap === "normal" ||
+            const useNormalMap =
+              formResult.depthMap === "normal" ||
               (formResult.depthMap && !projectHeightMap);
 
-            const depthMap = useNormalMap
-                ? projectNormalMap
-                : projectHeightMap;
+            const depthMap = useNormalMap ? projectNormalMap : projectHeightMap;
 
             if (!depthMap) {
               return cb();
@@ -1337,7 +1339,7 @@ interface ILightrParams {
                   useNormalMap ? "normal" : "heightmap"
                 ] = pathToName(filePath, false);
                 cb();
-              }
+              },
             );
           };
 
@@ -1356,9 +1358,12 @@ interface ILightrParams {
                 savetype: "image",
               },
               (filePath) => {
-                textureSet["minecraft:texture_set"].color = pathToName(filePath, false);
+                textureSet["minecraft:texture_set"].color = pathToName(
+                  filePath,
+                  false,
+                );
                 cb();
-              }
+              },
             );
           };
 
@@ -1643,7 +1648,10 @@ interface ILightrParams {
       name: "Export MER",
       description:
         "Exports a texture map from the metalness, emissive, and roughness channels. (For use in Bedrock resource packs.)",
-      // condition: () => Format.id == "bedrock",
+      condition: {
+        formats: ["bedrock_block", "bedrock_entity"],
+        project: true,
+      },
       click() {
         exportMer();
       },
@@ -2175,8 +2183,8 @@ interface ILightrParams {
           children: [
             "toggle_pbr",
             `${PLUGIN_ID}_correct_lights`,
-            `${PLUGIN_ID}_show_channel_menu`,
             `${PLUGIN_ID}_create_material_texture`,
+            `${PLUGIN_ID}_show_channel_menu`,
           ],
           name: "PBR",
         }),
