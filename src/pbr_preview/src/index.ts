@@ -897,7 +897,7 @@ interface ILightrParams {
    * @param cb Callback function to run after the MER file is exported
    * @returns void
    */
-  const exportMer = (cb?: (filePath: string) => void) => {
+  const exportMer = (baseName?: string, cb?: (filePath: string) => void) => {
     const selected = Project
       ? Project.selected_texture
       : Texture.all.find((t) => t.selected);
@@ -926,7 +926,7 @@ interface ILightrParams {
 
       const [name, startpath] = Project
         ? [
-            `${selected.name ?? Project.getDisplayName()}_mer`,
+            baseName ? `${baseName}_mer` : `${selected.name ?? Project.getDisplayName()}_mer`,
             Project.export_path,
           ]
         : ["mer"];
@@ -1174,9 +1174,9 @@ interface ILightrParams {
     Project.textures.forEach((t) => {
       const mat = new PbrMaterial(scope, t.uuid);
 
-      const projectNormalMap = mat.findTexture(CHANNELS.normal, false)?.name;
-      const projectHeightMap = mat.findTexture(CHANNELS.height, false)?.name;
-      const projectColorMap = mat.findTexture(CHANNELS.albedo, false)?.name;
+      const projectNormalMap = mat.findTexture(CHANNELS.normal, false);
+      const projectHeightMap = mat.findTexture(CHANNELS.height, false);
+      const projectColorMap = mat.findTexture(CHANNELS.albedo, false);
       const projectMetalnessMap = mat.findTexture(
         CHANNELS.metalness,
         false,
@@ -1229,6 +1229,22 @@ interface ILightrParams {
         };
       }
 
+      if (projectNormalMap) {
+        form.depthMap = {
+          type: "checkbox",
+          label: "Normal Map",
+          value: "normal",
+        };
+      }
+
+      if (projectHeightMap) {
+        form.depthMap = {
+          type: "checkbox",
+          label: "Height Map",
+          value: "heightmap",
+        };
+      }
+
       if (projectNormalMap && projectHeightMap) {
         form.depthMap = {
           type: "radio",
@@ -1268,7 +1284,7 @@ interface ILightrParams {
             "minecraft:texture_set": {
               color:
                 (projectColorMap
-                  ? pathToName(projectColorMap, false)
+                  ? baseName // pathToName(projectColorMap.name, false)
                   : formResult.baseColor?.toHexString()) ?? baseName,
               metalness_emissive_roughness: [
                 formResult.metalness ?? 0,
@@ -1278,24 +1294,27 @@ interface ILightrParams {
             },
           };
 
-          if (formResult.depthMap === "normal" && projectNormalMap) {
-            textureSet["minecraft:texture_set"].normal = pathToName(
-              projectNormalMap,
-              false,
-            );
+          if (
+            (formResult.depthMap === "normal" && projectNormalMap) ||
+            (!projectHeightMap && projectNormalMap)
+          ) {
+            textureSet["minecraft:texture_set"].normal = `${baseName}_normal`
           } else if (
             (!projectNormalMap || formResult.depthMap === "heightmap") &&
             projectHeightMap
           ) {
-            textureSet["minecraft:texture_set"].heightmap = pathToName(
-              projectHeightMap,
-              false,
-            );
+            textureSet["minecraft:texture_set"].heightmap = `${baseName}_heightmap`
           }
 
           const exportDepthMap = (cb: () => void) => {
-            const depthMap =
-              formResult.depthMap === "normal"
+            if (!formResult.depthMap) {
+              return cb();
+            }
+
+            const useNormalMap = formResult.depthMap === "normal" ||
+              (formResult.depthMap && !projectHeightMap);
+
+            const depthMap = useNormalMap
                 ? projectNormalMap
                 : projectHeightMap;
 
@@ -1305,37 +1324,67 @@ interface ILightrParams {
 
             Blockbench.export(
               {
-                content: depthMap,
+                content: depthMap.canvas.toDataURL() ?? "",
                 type: "PNG",
-                name: `${baseName}_${formResult.depthMap}`,
+                name: `${baseName}_${useNormalMap ? "normal" : "heightmap"}`,
                 extensions: ["png"],
                 resource_id: formResult.depthMap,
                 startpath: Project.export_path,
+                savetype: "image",
               },
-              cb,
+              (filePath) => {
+                textureSet["minecraft:texture_set"][
+                  useNormalMap ? "normal" : "heightmap"
+                ] = pathToName(filePath, false);
+                cb();
+              }
+            );
+          };
+
+          const exportBaseColor = (cb: () => void) => {
+            if (!projectColorMap) {
+              return cb();
+            }
+
+            Blockbench.export(
+              {
+                content: projectColorMap.canvas.toDataURL(),
+                extensions: ["png"],
+                type: "PNG",
+                name: baseName,
+                startpath: Project.export_path,
+                savetype: "image",
+              },
+              (filePath) => {
+                textureSet["minecraft:texture_set"].color = pathToName(filePath, false);
+                cb();
+              }
             );
           };
 
           const exportTextureSet = () =>
             exportDepthMap(() => {
-              Blockbench.export(
-                {
-                  content: JSON.stringify(textureSet, null, 2),
-                  type: "JSON",
-                  name: `${baseName}.texture_set`,
-                  extensions: ["json"],
-                  resource_id: "texture_set",
-                  startpath: Project.export_path,
-                },
-                () => {
-                  Blockbench.showQuickMessage("Texture set created", 2000);
-                  textureSetDialog.hide();
-                },
-              );
+              exportBaseColor(() => {
+                Blockbench.export(
+                  {
+                    content: JSON.stringify(textureSet, null, 2),
+                    type: "JSON",
+                    name: `${baseName}.texture_set`,
+                    extensions: ["json"],
+                    resource_id: "texture_set",
+                    startpath: Project.export_path,
+                    savetype: "text",
+                  },
+                  () => {
+                    Blockbench.showQuickMessage("Texture set created", 2000);
+                    textureSetDialog.hide();
+                  },
+                );
+              });
             });
 
           if (hasMer) {
-            exportMer((filePath) => {
+            exportMer(baseName, (filePath) => {
               textureSet["minecraft:texture_set"].metalness_emissive_roughness =
                 pathToName(filePath, false);
               exportTextureSet();
@@ -1668,7 +1717,7 @@ interface ILightrParams {
         createTextureSetDialog();
       },
       condition: {
-        formats: ["bedrock"],
+        formats: ["bedrock_block", "bedrock_entity"],
         project: true,
       },
     });
