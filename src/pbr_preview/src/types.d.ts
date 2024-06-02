@@ -51,6 +51,7 @@ export interface IRegistry {
   decodeMer: Action;
   displaySettingsPanel: Panel;
   exposureSlider: BarSlider;
+  resetExposure: Action;
   generateMer: Action;
   generateNormal: Action;
   materialBrushPanel: Panel;

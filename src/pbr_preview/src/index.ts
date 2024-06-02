@@ -21,8 +21,10 @@ import "./lib/panels";
   const onunload = () => {
     teardowns.forEach((teardown) => teardown());
     Object.entries(registry).forEach(([key, value]) => {
-      if (value instanceof Deletable) {
+      try {
         value?.delete();
+      } catch (err) {
+        console.error(`Failed to delete ${key} action:`, err);
       }
     });
   };

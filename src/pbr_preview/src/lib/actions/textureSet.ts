@@ -1,4 +1,4 @@
-import { registry, CHANNELS, setups, teardowns } from "../../constants";
+import { CHANNELS, registry, setups, teardowns } from "../../constants";
 import { exportMer } from "../mer";
 import PbrMaterial from "../PbrMaterials";
 

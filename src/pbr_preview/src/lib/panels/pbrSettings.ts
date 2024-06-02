@@ -23,6 +23,7 @@ setups.push(() => {
         children: [
           "display_settings_tone_mapping",
           "display_settings_exposure",
+          "display_settings_reset_exposure",
         ],
         name: "Display Settings",
       }),

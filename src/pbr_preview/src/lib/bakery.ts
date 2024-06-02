@@ -12,11 +12,7 @@ export const bakeTextures = (
     return;
   }
 
-  const selected = Project.selected_texture;
-
-  if (!selected) {
-    return;
-  }
+  const selected = Project.selected_texture ?? Texture.getDefault();
 
   const mat = new PbrMaterial(
     selected.layers_enabled ? selected.layers : Project.textures,
@@ -24,9 +20,28 @@ export const bakeTextures = (
   );
 
   const texture = mat.findTexture(CHANNELS.albedo);
-  const normalMap = mat.findTexture(CHANNELS.normal);
 
-  if (!texture || !normalMap) {
+  if (!texture) {
+    Blockbench.showStatusMessage(
+      "Can not bake without a base color assigned.",
+      3000,
+    );
+    return;
+  }
+
+  let normalMap = mat.findTexture(CHANNELS.normal);
+
+  // TODO: Generate normal map automatically when needed and possible
+  //   const heightmap = mat.findTexture(CHANNELS.height);
+  //   if (!normalMap && heightmap) {
+  //     normalMap = PbrMaterial.createNormalMap(heightmap, false);
+  //   }
+
+  if (!normalMap) {
+    Blockbench.showStatusMessage(
+      "Can not bake without a normal map assigned.",
+      3000,
+    );
     return;
   }
 

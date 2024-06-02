@@ -1,8 +1,6 @@
 import type { IChannel, IRegistry } from "./types";
 import { three as THREE } from "./deps";
 
-export const PLUGIN_ID = "pbr_preview";
-export const PLUGIN_VERSION = "1.0.0";
 export const NA_CHANNEL = "_NONE_";
 export const CHANNELS: Record<IChannel["id"], IChannel> = {
   albedo: {
@@ -63,6 +61,10 @@ export const CHANNELS: Record<IChannel["id"], IChannel> = {
   },
 };
 
+/**
+ * Collection of registered Blockbench UI elements
+ * Used for component communication as well as to simplify cleanup
+ */
 export const registry: Partial<IRegistry> = {};
 
 export const setups: Array<() => void> = [];

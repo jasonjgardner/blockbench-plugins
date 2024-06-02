@@ -2,6 +2,15 @@ import { registry, setups } from "../../constants";
 import { three as THREE } from "../../deps";
 import { applyPbrMaterial } from "../applyPbrMaterial";
 
+const setPreviewExposure = (value: number) => {
+  const exposureValue = Math.max(-2, Math.min(2, Number(value)));
+  Preview.all.forEach((preview) => {
+    preview.renderer.toneMappingExposure = exposureValue;
+  });
+
+  Preview.selected.renderer.toneMappingExposure = exposureValue;
+};
+
 setups.push(() => {
   registry.exposureSlider = new BarSlider("display_settings_exposure", {
     category: "preview",
@@ -17,20 +26,31 @@ setups.push(() => {
     onBefore() {
       if (Number(registry.tonemappingSelect?.get()) === THREE.NoToneMapping) {
         // @ts-expect-error `.change()` does not require an Event for its value
-        tonemappingSelect.change(THREE.LinearToneMapping.toString());
+        registry.tonemappingSelect.change(THREE.LinearToneMapping.toString());
       }
       // @ts-expect-error Set method exists on the toggle
       registry.togglePbr?.set(true);
     },
     onChange({ value }) {
-      const exposureValue = Math.max(-2, Math.min(2, Number(value)));
-      Preview.all.forEach((preview) => {
-        preview.renderer.toneMappingExposure = exposureValue;
-      });
-
-      Preview.selected.renderer.toneMappingExposure = exposureValue;
+      setPreviewExposure(value);
     },
     onAfter() {
+      applyPbrMaterial();
+    },
+  });
+
+  registry.resetExposureButton = new Action("display_settings_reset_exposure", {
+    category: "preview",
+    name: "Reset Exposure",
+    description: "Resets the exposure of the scene",
+    icon: "exposure_plus_1",
+    condition: () =>
+      registry.exposureSlider !== undefined &&
+      Number(registry.exposureSlider?.get()) !== 1,
+    click() {
+      setPreviewExposure(1);
+      registry.exposureSlider?.set(1);
+
       applyPbrMaterial();
     },
   });
@@ -44,7 +64,7 @@ setups.push(() => {
     value: Preview.selected.renderer.toneMapping ?? THREE.NoToneMapping,
     icon: "monochrome_photos",
     options: {
-      [THREE.NoToneMapping]: "None",
+      [THREE.NoToneMapping]: "No Tone Mapping",
       [THREE.LinearToneMapping]: "Linear",
       [THREE.ReinhardToneMapping]: "Reinhard",
       [THREE.CineonToneMapping]: "Cineon",
