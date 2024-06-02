@@ -532,6 +532,255 @@ export default class PbrMaterial {
     };
   }
 
+  decodeLabPbrNormal(texture: Texture | TextureLayer): {
+    ao?: HTMLCanvasElement | null;
+    normal?: HTMLCanvasElement | null;
+    heightmap?: HTMLCanvasElement | null;
+  } {
+    const width = texture.img.width ?? 16;
+    const height = texture.img.height ?? 16;
+
+    const ctx = texture.canvas.getContext("2d");
+
+    if (!ctx) {
+      return {};
+    }
+
+    const aoCanvas = document.createElement("canvas");
+    aoCanvas.width = width;
+    aoCanvas.height = height;
+
+    const normalCanvas = document.createElement("canvas");
+    normalCanvas.width = width;
+    normalCanvas.height = height;
+
+    const heightmapCanvas = document.createElement("canvas");
+    heightmapCanvas.width = width;
+    heightmapCanvas.height = height;
+
+    const aoCtx = aoCanvas.getContext("2d");
+    const normalCtx = normalCanvas.getContext("2d");
+    const heightmapCtx = heightmapCanvas.getContext("2d");
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+
+    if (!data || !aoCtx || !normalCtx || !heightmapCtx) {
+      return {};
+    }
+
+    const aoData = new Uint8ClampedArray(width * height * 4);
+    const normalData = new Uint8ClampedArray(width * height * 4);
+    const heightmapData = new Uint8ClampedArray(width * height * 4);
+
+    for (let r = 0; r < data.length; r += 4) {
+      const g = r + 1;
+      const b = r + 2;
+      const a = r + 3;
+
+      aoData[r] = data[b];
+      aoData[g] = data[b];
+      aoData[b] = data[b];
+      aoData[a] = 255;
+
+      normalData[r] = data[r];
+      normalData[g] = data[g];
+      normalData[b] = 255;
+      normalData[a] = 255;
+
+      heightmapData[r] = data[a];
+      heightmapData[g] = data[a];
+      heightmapData[b] = data[a];
+      heightmapData[a] = 255;
+    }
+
+    aoCtx.putImageData(new ImageData(aoData, width, height), 0, 0);
+    normalCtx.putImageData(new ImageData(normalData, width, height), 0, 0);
+    heightmapCtx.putImageData(
+      new ImageData(heightmapData, width, height),
+      0,
+      0,
+    );
+
+    return {
+      ao: aoCanvas,
+      normal: normalCanvas,
+      heightmap: heightmapCanvas,
+    };
+  }
+
+  decodeLabPbrSpecular(texture: Texture | TextureLayer): {
+    metalness?: HTMLCanvasElement | null;
+    emissive?: HTMLCanvasElement | null;
+    roughness?: HTMLCanvasElement | null;
+    sss?: HTMLCanvasElement | null;
+    porosity?: HTMLCanvasElement | null;
+  } {
+    const width = texture.img.width ?? 16;
+    const height = texture.img.height ?? 16;
+
+    const ctx = texture.canvas.getContext("2d");
+
+    if (!ctx) {
+      return {};
+    }
+    const metalnessCanvas = document.createElement("canvas");
+    metalnessCanvas.width = width;
+    metalnessCanvas.height = height;
+
+    const emissiveCanvas = document.createElement("canvas");
+    emissiveCanvas.width = width;
+    emissiveCanvas.height = height;
+
+    const roughnessCanvas = document.createElement("canvas");
+    roughnessCanvas.width = width;
+    roughnessCanvas.height = height;
+
+    const sssCanvas = document.createElement("canvas");
+    sssCanvas.width = width;
+    sssCanvas.height = height;
+
+    const porosityCanvas = document.createElement("canvas");
+    porosityCanvas.width = width;
+    porosityCanvas.height = height;
+
+    const metalnessCtx = metalnessCanvas.getContext("2d");
+    const emissiveCtx = emissiveCanvas.getContext("2d");
+    const roughnessCtx = roughnessCanvas.getContext("2d");
+    const sssCtx = sssCanvas.getContext("2d");
+    const porosityCtx = porosityCanvas.getContext("2d");
+
+    const { data } = ctx.getImageData(0, 0, width, height);
+
+    if (
+      !data ||
+      !metalnessCtx ||
+      !emissiveCtx ||
+      !roughnessCtx ||
+      !sssCtx ||
+      !porosityCtx
+    ) {
+      return {};
+    }
+
+    const metalnessData = new Uint8ClampedArray(width * height * 4);
+    const emissiveData = new Uint8ClampedArray(width * height * 4);
+    const roughnessData = new Uint8ClampedArray(width * height * 4);
+    const sssData = new Uint8ClampedArray(width * height * 4);
+    const porosityData = new Uint8ClampedArray(width * height * 4);
+
+    for (let r = 0; r < data.length; r += 4) {
+      // Roughness is inverted smoothness in red channel
+      // Metalness is F0 in green channel
+      // SSS and porosity are stored in blue channel linearly
+      // Emissive is stored in alpha channel linearly
+
+      const g = r + 1;
+      const b = r + 2;
+      const a = r + 3;
+
+      roughnessData[r] = 255 - data[r];
+      roughnessData[g] = 255 - data[r];
+      roughnessData[b] = 255 - data[r];
+      roughnessData[a] = 255;
+
+      metalnessData[r] = data[g];
+      metalnessData[g] = data[g];
+      metalnessData[b] = data[g];
+      metalnessData[a] = 255;
+
+      emissiveData[r] = data[a];
+      emissiveData[g] = data[a];
+      emissiveData[b] = data[a];
+      emissiveData[a] = 255;
+
+      sssData[r] = 0;
+      sssData[g] = 0;
+      sssData[b] = 0;
+      sssData[a] = 255;
+
+      porosityData[r] = data[b];
+      porosityData[g] = data[b];
+      porosityData[b] = data[b];
+      porosityData[a] = 255;
+
+      if (data[b] < 65) {
+        sssData[r] = data[b];
+        sssData[g] = data[b];
+        sssData[b] = data[b];
+        sssData[a] = 255;
+
+        porosityData[r] = 0;
+        porosityData[g] = 0;
+        porosityData[b] = 0;
+        porosityData[a] = 255;
+      }
+    }
+
+    metalnessCtx.putImageData(
+      new ImageData(metalnessData, width, height),
+      0,
+      0,
+    );
+
+    emissiveCtx.putImageData(new ImageData(emissiveData, width, height), 0, 0);
+
+    roughnessCtx.putImageData(
+      new ImageData(roughnessData, width, height),
+      0,
+      0,
+    );
+
+    sssCtx.putImageData(new ImageData(sssData, width, height), 0, 0);
+
+    porosityCtx.putImageData(new ImageData(porosityData, width, height), 0, 0);
+
+    return {
+      metalness: metalnessCanvas,
+      emissive: emissiveCanvas,
+      roughness: roughnessCanvas,
+      sss: sssCanvas,
+      porosity: porosityCanvas,
+    };
+  }
+
+  createTexturesFromSpecular(texture: Texture | TextureLayer) {
+    const maps = this.decodeLabPbrSpecular(texture);
+
+    Object.entries(maps).forEach(([name, map]) => {
+      if (map) {
+        const textureMap = new Texture({
+          name: `${texture.name}_${name}`,
+          saved: false,
+          particle: false,
+          keep_size: false,
+        }).fromDataURL(map.toDataURL());
+
+        textureMap.add();
+      }
+    });
+
+    return maps;
+  }
+
+  createTexturesFromNormal(texture: Texture | TextureLayer) {
+    const maps = this.decodeLabPbrNormal(texture);
+
+    Object.entries(maps).forEach(([name, map]) => {
+      if (map) {
+        const textureMap = new Texture({
+          name: `${texture.name}_${name}`,
+          saved: false,
+          particle: false,
+          keep_size: false,
+        }).fromDataURL(map.toDataURL());
+
+        textureMap.add();
+      }
+    });
+
+    return maps;
+  }
+
   /**
    * ### Generate Normal Map
    * Generates a normal map from a height map texture
@@ -539,7 +788,7 @@ export default class PbrMaterial {
    * @param heightInAlpha Whether or not to store the height map in the alpha channel (Used in labPBR shaders for POM)
    * @returns Normal map texture or layer if successful, otherwise `null`
    */
-  static createNormalMap(
+  createNormalMap(
     texture: Texture | TextureLayer,
     heightInAlpha = false,
   ): Texture | TextureLayer | null {

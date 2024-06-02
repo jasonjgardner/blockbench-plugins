@@ -29,7 +29,7 @@ setups.push(() => {
         texture.uuid,
       );
 
-      const normalMap = PbrMaterial.createNormalMap(texture);
+      const normalMap = mat.createNormalMap(texture);
 
       if (normalMap) {
         mat.saveTexture(CHANNELS.normal, normalMap);
