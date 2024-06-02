@@ -7,3 +7,4 @@ import "./textureSet";
 import "./toggleLights";
 import "./togglePbr";
 import "./tonemapping";
+import "./labPbr";

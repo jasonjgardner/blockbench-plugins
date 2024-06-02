@@ -54,6 +54,7 @@ export interface IRegistry {
   resetExposure: Action;
   generateMer: Action;
   generateNormal: Action;
+  generateLabPbr: Action;
   materialBrushPanel: Panel;
   materialBrushTool: Tool;
   openChannelMenu: Action;

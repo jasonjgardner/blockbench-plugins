@@ -402,6 +402,136 @@ export default class PbrMaterial {
     return canvas;
   }
 
+  createLabPbrOutput(inference = true) {
+    const metalness = this.findTexture(CHANNELS.metalness, inference);
+    const emissive = this.findTexture(CHANNELS.emissive, inference);
+    const roughness = this.findTexture(CHANNELS.roughness, inference);
+    const normal = this.findTexture(CHANNELS.normal, inference);
+    const heightmap = this.findTexture(CHANNELS.height, inference);
+    const ao = this.findTexture(CHANNELS.ao, false);
+    const sss = this.findTexture("sss", true);
+    const porosity = this.findTexture("porosity", true);
+
+    const width = Math.max(
+      metalness?.img.width ?? 0,
+      emissive?.img.width ?? 0,
+      roughness?.img.width ?? 0,
+      Project ? Project.texture_width : 0,
+      16,
+    );
+
+    const height = Math.max(
+      metalness?.img.height ?? 0,
+      emissive?.img.height ?? 0,
+      roughness?.img.height ?? 0,
+      Project ? Project.texture_height : 0,
+      16,
+    );
+
+    const specularCanvas = document.createElement("canvas");
+    specularCanvas.width = width;
+    specularCanvas.height = height;
+
+    const specularCtx = specularCanvas.getContext("2d");
+
+    const normalMapCanvas = document.createElement("canvas");
+    normalMapCanvas.width = width;
+    normalMapCanvas.height = height;
+
+    const normalMapCtx = normalMapCanvas.getContext("2d");
+
+    if (!specularCtx || !normalMapCtx) {
+      return null;
+    }
+
+    const specularData = new Uint8ClampedArray(width * height * 4);
+    const normalData = new Uint8ClampedArray(width * height * 4);
+
+    // Specular texture output "_s"
+    // Red channel: Convert linear roughness to perceptual smoothness with: perceptualSmoothness = 1.0 - sqrt(roughness).
+    // Green channel: Values from 0 to 229 represent F0. Stored linearly. Values from 230 to 255 represent various different metals.
+    // Blue channel: Values from 0 to 64 represent porosity. Values from 65 to 255 represent subsurface scattering. Both porosity and subsurface scattering are stored linearly.
+    // Alpha channel: It can have values ranging from 0 to 254; 0 being 0% emissiveness and 254 being 100%. Stored linearly.
+    const metalnessCanvas = metalness?.canvas;
+    const emissiveCanvas = emissive?.canvas;
+    const roughnessCanvas = roughness?.canvas;
+    const sssCanvas = sss?.canvas;
+    const porosityCanvas = porosity?.canvas;
+
+    const metalnessCtx = metalnessCanvas?.getContext("2d");
+    const emissiveCtx = emissiveCanvas?.getContext("2d");
+    const roughnessCtx = roughnessCanvas?.getContext("2d");
+    const sssCtx = sssCanvas?.getContext("2d");
+    const porosityCtx = porosityCanvas?.getContext("2d");
+
+    const metalnessData = metalnessCtx?.getImageData(0, 0, width, height);
+    const emissiveData = emissiveCtx?.getImageData(0, 0, width, height);
+    const roughnessData = roughnessCtx?.getImageData(0, 0, width, height);
+    const sssData = sssCtx?.getImageData(0, 0, width, height);
+    const porosityData = porosityCtx?.getImageData(0, 0, width, height);
+
+    for (let idx = 0; idx < specularData.length; idx += 4) {
+      const smoothness = roughnessData
+        ? 1.0 - Math.sqrt(roughnessData.data[idx] / 255)
+        : 0;
+      //   const f0 = Math.min(229, Math.max(0, Math.round(smoothness * 229)));
+
+      // Convert metalness to F0
+      const f0 = Math.min(
+        229,
+        Math.max(0, Math.round((metalnessData?.data[idx] ?? smoothness) * 229)),
+      );
+
+      const porosity = porosityData?.data[idx];
+      const sss = sssData?.data[idx];
+
+      specularData[idx] = smoothness * 255;
+      specularData[idx + 1] = f0;
+
+      // Merge porosity and sss in blue channel because they are mutually exclusive
+      specularData[idx + 2] = sss ?? porosity ?? 0;
+
+      // Add emissive to alpha
+      specularData[idx + 3] = emissiveData?.data[idx + 3] ?? 0;
+    }
+
+    // Remove alpha channel if it ends up entirely transparent
+    if (specularData.every((v, idx) => idx % 4 === 3 && v === 0)) {
+      specularData.fill(255, 3);
+    }
+
+    specularCtx.putImageData(new ImageData(specularData, width, height), 0, 0);
+
+    // Normal map output "_n"
+    // AO is stored in blue channel
+    // Height map is stored in alpha channel
+    const normalCanvas = normal?.canvas;
+    const aoCanvas = ao?.canvas;
+    const heightmapCanvas = heightmap?.canvas;
+
+    const normalCtx = normalCanvas?.getContext("2d");
+    const aoCtx = aoCanvas?.getContext("2d");
+    const heightmapCtx = heightmapCanvas?.getContext("2d");
+
+    const normalMapData = normalCtx?.getImageData(0, 0, width, height);
+    const aoData = aoCtx?.getImageData(0, 0, width, height);
+    const heightmapData = heightmapCtx?.getImageData(0, 0, width, height);
+
+    for (let idx = 0; idx < normalData.length; idx += 4) {
+      normalData[idx] = normalMapData?.data[idx] ?? 0;
+      normalData[idx + 1] = normalMapData?.data[idx + 1] ?? 0;
+      normalData[idx + 2] = aoData?.data[idx + 2] ?? 255;
+      normalData[idx + 3] = heightmapData?.data[idx + 3] ?? 255;
+    }
+
+    normalMapCtx.putImageData(new ImageData(normalData, width, height), 0, 0);
+
+    return {
+      specular: specularCanvas,
+      normalMap: normalMapCanvas,
+    };
+  }
+
   /**
    * ### Generate Normal Map
    * Generates a normal map from a height map texture

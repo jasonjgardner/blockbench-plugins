@@ -1,7 +1,6 @@
-import { registry, setups, teardowns } from "../../constants";
-import { exportMer } from "../mer";
-import { CHANNELS } from "../../constants";
+import { CHANNELS, registry, setups, teardowns } from "../../constants";
 import PbrMaterial from "../PbrMaterials";
+import { exportMer } from "../mer";
 
 export function setup() {
   registry.generateMer = new Action("create_mer", {
