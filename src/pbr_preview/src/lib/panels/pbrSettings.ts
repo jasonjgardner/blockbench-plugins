@@ -10,12 +10,7 @@ setups.push(() => {
     toolbars: [
       new Toolbar("controls_toolbar", {
         id: "controls_toolbar",
-        children: [
-          "toggle_pbr",
-          "correct_lights",
-          "create_material_texture",
-          "show_channel_menu",
-        ],
+        children: ["toggle_pbr", "correct_lights"],
         name: "PBR",
       }),
       new Toolbar("display_settings_toolbar", {

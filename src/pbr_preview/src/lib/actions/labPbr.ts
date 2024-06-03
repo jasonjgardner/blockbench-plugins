@@ -1,7 +1,10 @@
 import { registry, setups, teardowns } from "../../constants";
 import PbrMaterial from "../PbrMaterials";
 
-const exportNormalMap = (normalMap: HTMLCanvasElement, baseName = "texture") => {
+const exportNormalMap = (
+  normalMap: HTMLCanvasElement,
+  baseName = "texture",
+) => {
   normalMap.toBlob(async (blob) => {
     if (!blob) {
       return;
@@ -18,7 +21,10 @@ const exportNormalMap = (normalMap: HTMLCanvasElement, baseName = "texture") => 
   });
 };
 
-const exportSpecularMap = (specularMap: HTMLCanvasElement, baseName = "texture") => {
+const exportSpecularMap = (
+  specularMap: HTMLCanvasElement,
+  baseName = "texture",
+) => {
   specularMap.toBlob(async (blob) => {
     if (!blob) {
       return;
@@ -60,7 +66,8 @@ setups.push(() => {
         return;
       }
 
-      const baseName = selected.name ?? (!!Project ? Project.getDisplayName() : "texture")
+      const baseName =
+        selected.name ?? (!!Project ? Project.getDisplayName() : "texture");
 
       await Promise.all([
         exportNormalMap(outputs.normalMap, pathToName(baseName)),
