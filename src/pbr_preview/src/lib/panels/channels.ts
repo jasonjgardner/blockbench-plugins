@@ -7,7 +7,6 @@ setups.push(() => {
     data() {
       return {
         channels: CHANNELS,
-        selectedTexture: Texture.selected ?? TextureLayer.selected.texture,
       };
     },
     methods: {
@@ -16,6 +15,11 @@ setups.push(() => {
       },
       canShowChannel(texture: Texture | TextureLayer) {
         return texture.channel && texture.channel !== NA_CHANNEL;
+      },
+      selectedTexture() {
+        return (
+          (Texture.selected ?? TextureLayer.selected.texture) !== undefined
+        );
       },
     },
     computed: {
@@ -43,7 +47,12 @@ setups.push(() => {
           >
             <img :src="texture.img.src" :alt="texture.name" width="48" height="48" />
             <div class="texture_description_wrapper texture_channel_description">
-              <div class="texture_name">{{ texture.name }}</div>
+              <div class="texture_name">
+                <div>{{ texture.name }}</div>
+                <div v-if="texture && texture.texture" class="texture_parent">
+                  {{ texture.texture.name }}
+                </div>
+              </div>
               <div class="texture_channel_wrapper">
                 <div class="texture_channel">{{ channels[texture.channel].label }}</div>
                 <i class="material-icons texture_particle_icon">{{ channels[texture.channel].icon }}</i>
@@ -79,6 +88,7 @@ setups.push(() => {
     .texture_channel_wrapper {
       align-items: center;
       background-color: var(--color-ui);
+      border-left: 1px solid var(--color-border);
       display: flex;
       flex: 1;
       flex-direction: row;
@@ -92,10 +102,18 @@ setups.push(() => {
     }
 
     .texture_channel_description .texture_name {
-      align-items: center;
+      flex-direction: column;
+      flex-wrap: nowrap;
       color: var(--color-subtle_text);
       display: flex;
       flex: 1;
+      justify-content: center;
+      align-items: start;
+    }
+
+    .texture_parent {
+      color: var(--color-subtle_text);
+      font-size: 0.8em;
     }
 
     .texture_channel_description:hover .texture_channel {
@@ -108,6 +126,7 @@ setups.push(() => {
     }
 
     #pbr_channel_list .texture {
+      border-top: 1px solid var(--color-border);
       padding-right: 0;
     }
   `);
@@ -137,7 +156,7 @@ setups.push(() => {
       slot: "left_bar",
       float_position: [0, 0],
       float_size: [400, 300],
-      height: 48 * 5 + 16,
+      height: 336,
       folded: true,
     },
     insert_after: "layers",
