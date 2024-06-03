@@ -17,6 +17,11 @@ setups.push(() => {
         ],
         name: "Material Brush",
       }),
+      new Toolbar("material_brush_presets_toolbar", {
+        id: "material_brush_presets_toolbar",
+        children: ["brush_presets"],
+        name: "Presets",
+      }),
     ],
     display_condition: {
       modes: ["paint"],

@@ -58,6 +58,7 @@ export interface IRegistry {
   decodeLabPbr: Action;
   materialBrushPanel: Panel;
   materialBrushTool: Tool;
+  materialBrushPresets: BarSelect;
   openChannelMenu: Action;
   pbrMaterialsProp: Property;
   projectMaterialsProp: Property;

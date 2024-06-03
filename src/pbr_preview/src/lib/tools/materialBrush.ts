@@ -2,6 +2,44 @@ import { registry, CHANNELS, setups, teardowns } from "../../constants";
 import { applyPbrMaterial } from "../applyPbrMaterial";
 import { MaterialBrush } from "../MaterialBrush";
 
+const presets: Record<string, () => void> = {
+  matte: () => {
+    registry.brushMetalnessSlider?.setValue(0, true);
+    registry.brushRoughnessSlider?.setValue(1, true);
+    registry.brushEmissiveColor?.set("#000000");
+    registry.brushHeightSlider?.setValue(0.5, true);
+  },
+  gloss: () => {
+    registry.brushMetalnessSlider?.setValue(0, true);
+    registry.brushRoughnessSlider?.setValue(0.5, true);
+    registry.brushEmissiveColor?.set("#000000");
+    registry.brushHeightSlider?.setValue(0.5, true);
+  },
+  metal: () => {
+    registry.brushMetalnessSlider?.setValue(1, true);
+    registry.brushRoughnessSlider?.setValue(0.5, true);
+    registry.brushEmissiveColor?.set("#000000");
+    registry.brushHeightSlider?.setValue(0.5, true);
+  },
+  polished: () => {
+    registry.brushMetalnessSlider?.setValue(1, true);
+    registry.brushRoughnessSlider?.setValue(0.1, true);
+    registry.brushEmissiveColor?.set("#000000");
+    registry.brushHeightSlider?.setValue(0.5, true);
+  },
+  glowing: () => {
+    registry.brushMetalnessSlider?.setValue(0, true);
+    registry.brushRoughnessSlider?.setValue(0.5, true);
+    registry.brushEmissiveColor?.set("#00ff00");
+    registry.brushHeightSlider?.setValue(0.5, true);
+  },
+};
+
+const applyPreset = (preset: string) => {
+  presets[preset]();
+  //   applyPbrMaterial();
+};
+
 setups.push(() => {
   registry.brushMetalnessSlider = new NumSlider("slider_brush_metalness", {
     category: "paint",
@@ -26,6 +64,7 @@ setups.push(() => {
 
       return (
         texture.layers.find(
+          // @ts-expect-error Channel property is an extension of TextureLayer
           ({ channel }) => channel === CHANNELS.metalness.id,
         ) !== undefined
       );
@@ -55,6 +94,7 @@ setups.push(() => {
 
       return (
         texture.layers.find(
+          // @ts-expect-error Channel property is an extension of TextureLayer
           ({ channel }) => channel === CHANNELS.roughness.id,
         ) !== undefined
       );
@@ -79,6 +119,7 @@ setups.push(() => {
 
       return (
         texture.layers.find(
+          // @ts-expect-error Channel property is an extension of TextureLayer
           ({ channel }) => channel === CHANNELS.emissive.id,
         ) !== undefined
       );
@@ -107,9 +148,28 @@ setups.push(() => {
       }
 
       return (
+        // @ts-expect-error Channel property is an extension of TextureLayer
         texture.layers.find(({ channel }) => channel === CHANNELS.height.id) !==
         undefined
       );
+    },
+  });
+
+  registry.materialBrushPresets = new BarSelect("brush_presets", {
+    category: "paint",
+    name: "Material Brush Presets",
+    description: "Select a preset for the material brush",
+    options: {
+      matte: "Matte",
+      gloss: "Gloss",
+      metal: "Dull Metal",
+      polished: "Polished Metal",
+      glowing: "Glowing",
+    },
+    onChange({ value }) {
+      applyPreset(value);
+      registry.materialBrushTool?.select();
+      applyPbrMaterial();
     },
   });
 
@@ -140,10 +200,12 @@ setups.push(() => {
         let rgba = px;
 
         texture.layers.forEach((layer) => {
+          // @ts-expect-error Channel property is an extension of TextureLayer
           if (!layer.visible || !matChannels.includes(layer.channel)) {
             return;
           }
 
+          // @ts-expect-error Channel property is an extension of TextureLayer
           const fill = mat.getChannel(layer.channel);
 
           if (!fill) {
