@@ -487,12 +487,21 @@ export default class PbrMaterial {
       specularData[idx + 2] = sss ?? porosity ?? 0;
 
       // Add emissive to alpha
-      specularData[idx + 3] = emissiveData?.data[idx + 3] ?? 0;
-    }
+      // But first convert emissive channel from color to grayscale
 
-    // Remove alpha channel if it ends up entirely transparent
-    if (specularData.every((v, idx) => idx % 4 === 3 && v === 0)) {
-      specularData.fill(255, 3);
+      if (!emissiveData) {
+        specularData[idx + 3] = 255;
+        continue;
+      }
+
+      const emissiveLevel = Math.round(
+        (emissiveData?.data[idx] +
+          emissiveData?.data[idx + 1] +
+          emissiveData?.data[idx + 2]) /
+          3,
+      );
+
+      specularData[idx + 3] = emissiveLevel || 255;
     }
 
     specularCtx.putImageData(new ImageData(specularData, width, height), 0, 0);
@@ -516,7 +525,7 @@ export default class PbrMaterial {
       normalData[idx] = normalMapData?.data[idx] ?? 0;
       normalData[idx + 1] = normalMapData?.data[idx + 1] ?? 0;
       normalData[idx + 2] = aoData?.data[idx + 2] ?? 255;
-      normalData[idx + 3] = heightmapData?.data[idx + 3] ?? 255;
+      normalData[idx + 3] = heightmapData?.data[idx + 3] || 255;
     }
 
     normalMapCtx.putImageData(new ImageData(normalData, width, height), 0, 0);

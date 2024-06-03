@@ -1,7 +1,7 @@
 import { registry, setups, teardowns } from "../../constants";
 import PbrMaterial from "../PbrMaterials";
 
-const exportNormalMap = (normalMap: HTMLCanvasElement) => {
+const exportNormalMap = (normalMap: HTMLCanvasElement, baseName = "texture") => {
   normalMap.toBlob(async (blob) => {
     if (!blob) {
       return;
@@ -10,7 +10,7 @@ const exportNormalMap = (normalMap: HTMLCanvasElement) => {
     Blockbench.export({
       content: await blob.arrayBuffer(),
       type: "PNG",
-      name: "normal_map",
+      name: `${baseName}_n`,
       extensions: ["png"],
       resource_id: "normal_map",
       savetype: "image",
@@ -18,7 +18,7 @@ const exportNormalMap = (normalMap: HTMLCanvasElement) => {
   });
 };
 
-const exportSpecularMap = (specularMap: HTMLCanvasElement) => {
+const exportSpecularMap = (specularMap: HTMLCanvasElement, baseName = "texture") => {
   specularMap.toBlob(async (blob) => {
     if (!blob) {
       return;
@@ -27,7 +27,7 @@ const exportSpecularMap = (specularMap: HTMLCanvasElement) => {
     Blockbench.export({
       content: await blob.arrayBuffer(),
       type: "PNG",
-      name: "specular_map",
+      name: `${baseName}_s`,
       extensions: ["png"],
       resource_id: "specular_map",
       savetype: "image",
@@ -60,9 +60,11 @@ setups.push(() => {
         return;
       }
 
+      const baseName = selected.name ?? (!!Project ? Project.getDisplayName() : "texture")
+
       await Promise.all([
-        exportNormalMap(outputs.normalMap),
-        exportSpecularMap(outputs.specular),
+        exportNormalMap(outputs.normalMap, pathToName(baseName)),
+        exportSpecularMap(outputs.specular, pathToName(baseName)),
       ]);
 
       Blockbench.showQuickMessage("Exported labPBR textures");
