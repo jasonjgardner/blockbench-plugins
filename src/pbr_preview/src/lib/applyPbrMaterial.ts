@@ -52,20 +52,7 @@ export const applyPbrMaterial = (
       Canvas.updateAllFaces(texture);
       materialsSet = true;
     });
-
-    if (materialsSet) {
-      const mesh = item.getMesh();
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-    }
   });
-
-  if (materialsSet) {
-    // @ts-expect-error Property 'ground_plane' does not exist on type 'Canvas'
-    const plane: THREE.Mesh = Canvas.ground_plane;
-
-    plane.receiveShadow = true;
-  }
 
   Project.pbr_active = materialsSet;
 };

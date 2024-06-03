@@ -64,7 +64,9 @@ export default class PbrMaterial {
   getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
     const { emissiveMap, roughnessMap, metalnessMap } = this.merToCanvas();
 
-    const mat = new THREE.MeshStandardMaterial({
+    const normalMap = this.getTexture(CHANNELS.normal);
+
+    return new THREE.MeshStandardMaterial({
       map:
         this.getTexture(CHANNELS.albedo) ??
         PbrMaterial.makePixelatedCanvas(
@@ -74,6 +76,8 @@ export default class PbrMaterial {
         ),
       aoMap: this.getTexture(CHANNELS.ao),
       bumpMap: this.getTexture(CHANNELS.height),
+      normalMap,
+      normalScale: new THREE.Vector2(1, 1),
       metalnessMap,
       metalness: metalnessMap ? 1 : 0,
       roughnessMap,
@@ -82,19 +86,10 @@ export default class PbrMaterial {
       emissiveIntensity: emissiveMap ? 1 : 0,
       emissive: emissiveMap ? 0xffffff : 0,
       envMap: PreviewScene.active?.cubemap ?? null,
-      envMapIntensity: 1,
+      envMapIntensity: 0.95,
       alphaTest: 0.5,
       ...options,
     });
-
-    const normalMap = this.getTexture(CHANNELS.normal);
-
-    if (normalMap) {
-      mat.normalMap = normalMap;
-      mat.normalScale = new THREE.Vector2(1, 1);
-    }
-
-    return mat;
   }
 
   saveTexture(channel: IChannel, texture: Texture | TextureLayer) {
