@@ -7,6 +7,7 @@ setups.push(() => {
     data() {
       return {
         channels: CHANNELS,
+        selectedTexture: Texture.selected ?? TextureLayer.selected.texture,
       };
     },
     methods: {
@@ -18,39 +19,44 @@ setups.push(() => {
       },
     },
     computed: {
-      textures: () =>
-        Texture.all.map((t) => (t.layers_enabled ? t.layers : [t])).flat(),
+      textures: () => {
+        if (Texture.selected && Texture.selected.layers_enabled) {
+          return Texture.selected.layers;
+        }
+
+        return Texture.all
+          .map((t) => (t.layers_enabled ? t.layers : [t]))
+          .flat();
+      },
     },
     template: /* html */ `
-				<div>
-					<ul class="list mobile_scrollbar" ref="channel_list" id="channel_list">
-						<li
-							v-for="texture in textures"
-							v-bind:texid="texture.uuid"
-              v-on:click.stop="texture.select($event)"
-              v-on:dblclick="openMenu($event)"
-              v-if="canShowChannel(texture)"
-							:key="texture.uuid"
-							class="texture"
-						>
+      <div>
+        <ul v-if="selectedTexture" class="list mobile_scrollbar" id="pbr_channel_list">
+          <li
+            v-for="texture in textures"
+            v-bind:texid="texture.uuid"
+            v-on:click.stop="texture.select($event)"
+            v-on:dblclick="openMenu($event)"
+            v-if="canShowChannel(texture)"
+            :key="texture.uuid"
+            class="texture"
+          >
             <img :src="texture.img.src" :alt="texture.name" width="48" height="48" />
             <div class="texture_description_wrapper texture_channel_description">
               <div class="texture_name">{{ texture.name }}</div>
               <div class="texture_channel_wrapper">
-              <div class="texture_channel">{{ channels[texture.channel].label }}</div>
-              <i class="material-icons texture_particle_icon">{{ channels[texture.channel].icon }}</i>
-  </div>
+                <div class="texture_channel">{{ channels[texture.channel].label }}</div>
+                <i class="material-icons texture_particle_icon">{{ channels[texture.channel].icon }}</i>
+              </div>
             </div>
-						</li>
-					</ul>
-				</div>
-			`,
+          </li>
+        </ul>
+      </div>`,
   });
 
   registry.channelsPanelStyle = Blockbench.addCSS(/* css */ `
     .texture_channel {
-      background-color: var(--color-ui);
-      color: var(--color-text, currentColor);
+      color: var(--color-text);
       flex: 1;
       font-size: 1em;
       margin: 0 0 0 auto;
@@ -59,7 +65,6 @@ setups.push(() => {
     }
 
     .texture_channel + .texture_particle_icon {
-      background-color: var(--color-ui);
       padding-right: 8px;
     }
 
@@ -82,6 +87,10 @@ setups.push(() => {
       padding: 0 8px;
     }
 
+    .texture_channel_wrapper:hover {
+      background-color: var(--color-button);
+    }
+
     .texture_channel_description .texture_name {
       align-items: center;
       color: var(--color-subtle_text);
@@ -93,12 +102,12 @@ setups.push(() => {
       color: var(--color-accent);
     }
 
-    #channel_list {
+    #pbr_channel_list {
       display: flex;
       flex-direction: column;
     }
 
-    #channel_list .texture {
+    #pbr_channel_list .texture {
       padding-right: 0;
     }
   `);
@@ -128,7 +137,7 @@ setups.push(() => {
       slot: "left_bar",
       float_position: [0, 0],
       float_size: [400, 300],
-      height: 300,
+      height: 48 * 5 + 16,
       folded: true,
     },
     insert_after: "layers",
