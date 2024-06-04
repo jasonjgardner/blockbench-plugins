@@ -31,6 +31,14 @@ export class MaterialBrush {
     this._colors = { ...this._colors, ...colors };
   }
 
+  toString() {
+    const colors = Object.entries(this._colors).map(([key, color]) => [
+      key,
+      color.getHexString(),
+    ]);
+    return JSON.stringify(colors);
+  }
+
   getChannel(channel: IChannel["id"]) {
     return this._colors[channel];
   }

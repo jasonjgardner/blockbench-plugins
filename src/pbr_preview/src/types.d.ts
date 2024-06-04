@@ -71,5 +71,6 @@ export interface IRegistry {
   togglePbr: Toggle;
   tonemappingSelect: BarSelect;
   unassignChannel: Action;
+  userMaterialBrushPresets: Dialog;
   [key: string]: Deletable;
 }

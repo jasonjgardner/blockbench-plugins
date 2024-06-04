@@ -4,18 +4,15 @@ import { registry, setups } from "../../constants";
 
 setups.push(() => {
   registry.displaySettingsPanel = new Panel("display_settings", {
-    name: "PBR Settings",
+    name: "PBR Display Settings",
     id: "display_settings_panel",
     icon: "display_settings",
     toolbars: [
       new Toolbar("controls_toolbar", {
         id: "controls_toolbar",
-        children: ["toggle_pbr", "correct_lights"],
-        name: "PBR",
-      }),
-      new Toolbar("display_settings_toolbar", {
-        id: "display_settings_toolbar",
         children: [
+          "toggle_pbr",
+          "correct_lights",
           "display_settings_tone_mapping",
           "display_settings_exposure",
           "display_settings_reset_exposure",
