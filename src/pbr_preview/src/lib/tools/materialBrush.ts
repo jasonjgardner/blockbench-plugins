@@ -528,7 +528,7 @@ setups.push(() => {
   });
 
   registry.loadBrushPreset = new Action("load_brush_preset", {
-    icon: "restore",
+    icon: "stroke_full",
     name: "Material Brush Presets",
     description: "Load or save a brush preset",
     category: "paint",

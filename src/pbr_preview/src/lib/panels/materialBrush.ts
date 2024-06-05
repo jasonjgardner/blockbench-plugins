@@ -19,11 +19,7 @@ setups.push(() => {
       }),
       new Toolbar("material_brush_presets_toolbar", {
         id: "material_brush_presets_toolbar",
-        children: [
-          "brush_presets",
-          "user_brush_presets",
-          "load_brush_preset",
-        ],
+        children: ["load_brush_preset", "brush_presets"],
         name: "Brush Presets",
         label: true,
       }),
