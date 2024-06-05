@@ -81,6 +81,8 @@ setups.push(() => {
   });
 
   MenuBar.addAction(registry.createMaterialTexture, "tools");
+
+  Toolbars.texturelist.add(registry.createMaterialTexture, 3);
 });
 
 teardowns.push(() => {

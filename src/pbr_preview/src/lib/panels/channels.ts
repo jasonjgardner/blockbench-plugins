@@ -75,8 +75,13 @@ setups.push(() => {
     id: "channels_panel",
     icon: "gallery_thumbnail",
     display_condition: {
-      modes: ["paint", "edit", "animate"],
+      modes: ["paint", "edit"],
+    },
+    condition: {
       project: true,
+      selected: {
+        texture: true,
+      }
     },
     toolbars: [
       new Toolbar("channel_assignment_toolbar", {
@@ -86,44 +91,49 @@ setups.push(() => {
       }),
     ],
     component: {
-      name: "ChannelsPanel",
-      data(): {
-        channels: Record<string, IChannel>;
-      } {
-        return {
-          channels: CHANNELS,
-        };
+    name: "ChannelsPanel",
+    data(): {
+      channels: Record<string, IChannel>;
+    } {
+      return {
+        channels: CHANNELS,
+      };
+    },
+    methods: {
+      openMenu(event: MouseEvent) {
+        registry.channelMenu?.open(event);
       },
-      methods: {
-        openMenu(event: MouseEvent) {
-          registry.channelMenu?.open(event);
-        },
-      },
-      computed: {
-        textures() {
-          if (!Project || !Texture.all.length) {
-            return [];
-          }
+      selectTexture(texture: Texture | TextureLayer) {
+        Modes.options.paint.select();
+        texture.select();
+        texture.scrollTo();
+      }
+    },
+    computed: {
+      textures() {
+        const filterLayers = (layer: TextureLayer) =>
+          layer.visible && layer.channel && layer.channel !== NA_CHANNEL;
 
-          const filterLayers = (layer: TextureLayer) =>
-            layer.visible && layer.channel && layer.channel !== NA_CHANNEL;
+        if (TextureLayer.selected) {
+          return TextureLayer.selected.texture.layers.filter(filterLayers);
+        }
 
-          return Texture.selected && Texture.selected.layers_enabled
-            ? Texture.selected.layers.filter(filterLayers)
-            : Texture.all
-                .map((t) =>
-                  t.layers_enabled ? [...t.layers.filter(filterLayers)] : [t],
-                )
-                .flat()
-                .filter(Boolean);
-        },
+        return Texture.selected && Texture.selected.layers_enabled
+          ? Texture.selected.layers.filter(filterLayers)
+          : Texture.all
+              .map((t) =>
+                t.layers_enabled ? [...t.layers.filter(filterLayers)] : [t],
+              )
+              .flat()
+              .filter(Boolean);
       },
-      template: /* html */ `
+    },
+    template: /* html */ `
       <div>
         <ul class="list mobile_scrollbar" id="pbr_channel_list">
           <li
             v-for="texture in textures"
-            v-on:click.stop="texture.select($event)"
+            v-on:click.stop="selectTexture(texture)"
             v-on:dblclick="openMenu($event)"
             :key="texture.uuid"
             class="texture"
@@ -144,9 +154,9 @@ setups.push(() => {
           </li>
         </ul>
       </div>`,
-    },
+  },
     expand_button: true,
-    growable: false,
+    growable: true,
     onFold() {},
     onResize() {},
     default_side: "left",

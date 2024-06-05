@@ -69,7 +69,7 @@ setups.push(() => {
 
 teardowns.push(() => {
   Object.entries(channelActions).forEach(([key, action]) => {
-    action.delete();
+    action?.delete();
   });
 });
 
@@ -165,9 +165,14 @@ setups.push(() => {
 setups.push(() => {
   if (registry.openChannelMenu) {
     MenuBar.addAction(registry.openChannelMenu, "image.0");
+    TextureLayer.prototype.menu.addAction(registry.openChannelMenu, "0");
   }
+
+  Toolbars.layers.add(registry.showChannelMenu, 1);
 });
 
 teardowns.push(() => {
   MenuBar.removeAction("image.pbr_channel_menu");
+  TextureLayer.prototype.menu.removeAction("pbr_channel_menu");
+  Toolbars.layers.remove(registry.showChannelMenu);
 });
