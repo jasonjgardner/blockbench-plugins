@@ -12,6 +12,7 @@ import "./lib/properties";
 import "./lib/actions";
 import "./lib/tools";
 import "./lib/panels";
+import { disablePbr } from "./lib/disablePbr";
 
 (() => {
   const onload = () => {
@@ -19,6 +20,7 @@ import "./lib/panels";
   };
 
   const onunload = () => {
+    disablePbr();
     teardowns.forEach((teardown) => teardown());
     Object.entries(registry).forEach(([key, value]) => {
       try {
