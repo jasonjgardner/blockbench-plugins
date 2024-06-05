@@ -1,14 +1,22 @@
 import type { IChannel } from "../../types";
 import {
-  registry,
   CHANNELS,
   NA_CHANNEL,
+  registry,
   setups,
   teardowns,
 } from "../../constants";
 import { applyPbrMaterial } from "../applyPbrMaterial";
 
 const channelActions: Record<IChannel["id"], Action> = {};
+
+const isPaintableTexture = Condition(() => {
+  return (
+    // @ts-expect-error Paint mode exists
+    Modes.paint &&
+    (TextureLayer.selected || (Project && Project.selected_texture !== null))
+  );
+});
 
 export function setup() {
   Object.entries(CHANNELS).forEach(([key, channel]) => {
@@ -17,10 +25,7 @@ export function setup() {
       name: `Assign to ${channel.label.toLocaleLowerCase()} channel`,
       description: `Assign the selected layer to the ${channel.label} channel`,
       category: "textures",
-      condition: () =>
-        Modes.paint &&
-        (TextureLayer.selected ||
-          (Project && Project.selected_texture !== null)),
+      condition: isPaintableTexture,
       click(e) {
         const layer =
           TextureLayer.selected ?? (Project ? Project.selected_texture : null);
@@ -82,6 +87,7 @@ setups.push(() => {
     description: "Unassign the selected layer from the channel",
     category: "textures",
     condition: () => {
+      // @ts-expect-error Paint mode exists
       if (!Modes.paint) {
         return false;
       }
@@ -100,7 +106,7 @@ setups.push(() => {
       const texture = Project.selected_texture;
 
       return (
-        texture !== null && (texture.channel !== NA_CHANNEL || !texture.channel)
+        texture !== null && texture.channel !== NA_CHANNEL && texture.channel
       );
     },
     click() {
@@ -159,9 +165,7 @@ setups.push(() => {
     name: "Assign to PBR Channel",
     description: "Assign the selected layer to a channel",
     category: "textures",
-    condition: () =>
-      Modes.paint &&
-      (TextureLayer.selected || (Project && Project.selected_texture !== null)),
+    condition: isPaintableTexture,
     click(event) {
       registry.channelMenu?.open(event as MouseEvent);
     },
