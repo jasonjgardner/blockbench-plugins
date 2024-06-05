@@ -10,22 +10,18 @@ import { applyPbrMaterial } from "../applyPbrMaterial";
 
 const channelActions: Record<IChannel["id"], Action> = {};
 
-const isPaintableTexture = Condition(() => {
-  return (
-    // @ts-expect-error Paint mode exists
-    Modes.paint &&
-    (TextureLayer.selected || (Project && Project.selected_texture !== null))
-  );
-});
-
-export function setup() {
+setups.push(() => {
   Object.entries(CHANNELS).forEach(([key, channel]) => {
     channelActions[key] = new Action(`assign_channel_${key}`, {
       icon: channel.icon ?? "tv_options_edit_channels",
       name: `Assign to ${channel.label.toLocaleLowerCase()} channel`,
       description: `Assign the selected layer to the ${channel.label} channel`,
       category: "textures",
-      condition: isPaintableTexture,
+      condition: {
+        selected: {
+          texture: true,
+        },
+      },
       click(e) {
         const layer =
           TextureLayer.selected ?? (Project ? Project.selected_texture : null);
@@ -69,16 +65,13 @@ export function setup() {
       },
     });
   });
-}
+});
 
-export function teardown() {
+teardowns.push(() => {
   Object.entries(channelActions).forEach(([key, action]) => {
     action.delete();
   });
-}
-
-setups.push(setup);
-teardowns.push(teardown);
+});
 
 setups.push(() => {
   registry.unassignChannel = new Action("unassign_channel", {
@@ -86,28 +79,20 @@ setups.push(() => {
     name: "Unassign Channel",
     description: "Unassign the selected layer from the channel",
     category: "textures",
-    condition: () => {
-      // @ts-expect-error Paint mode exists
-      if (!Modes.paint) {
-        return false;
-      }
+    condition: {
+      selected: {
+        texture: true,
+      },
+      method() {
+        const layer =
+          TextureLayer.selected ?? (Project ? Project.selected_texture : null);
 
-      if (TextureLayer.selected) {
-        return (
-          TextureLayer.selected.channel !== NA_CHANNEL ||
-          !TextureLayer.selected.channel
-        );
-      }
+        if (!layer || !Project) {
+          return false;
+        }
 
-      if (!Project) {
-        return false;
-      }
-
-      const texture = Project.selected_texture;
-
-      return (
-        texture !== null && texture.channel !== NA_CHANNEL && texture.channel
-      );
+        return layer.channel && layer.channel !== NA_CHANNEL;
+      },
     },
     click() {
       const layer =
@@ -165,7 +150,12 @@ setups.push(() => {
     name: "Assign to PBR Channel",
     description: "Assign the selected layer to a channel",
     category: "textures",
-    condition: isPaintableTexture,
+    condition: {
+      modes: ["paint"],
+      selected: {
+        texture: true,
+      },
+    },
     click(event) {
       registry.channelMenu?.open(event as MouseEvent);
     },

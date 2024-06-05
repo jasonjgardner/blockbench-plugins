@@ -1,68 +1,7 @@
+import type { IChannel } from "../../types";
 import { registry, setups, CHANNELS, NA_CHANNEL } from "../../constants";
-import { vue as Vue } from "../../deps";
 
 setups.push(() => {
-  const component = Vue.extend({
-    name: "ChannelsPanel",
-    data() {
-      return {
-        channels: CHANNELS,
-      };
-    },
-    methods: {
-      openMenu(event: MouseEvent) {
-        registry.channelMenu?.open(event);
-      },
-      canShowChannel(texture: Texture | TextureLayer) {
-        return texture.channel && texture.channel !== NA_CHANNEL;
-      },
-      selectedTexture() {
-        return (
-          (Texture.selected ?? TextureLayer.selected.texture) !== undefined
-        );
-      },
-    },
-    computed: {
-      textures: () => {
-        if (Texture.selected && Texture.selected.layers_enabled) {
-          return Texture.selected.layers;
-        }
-
-        return Texture.all
-          .map((t) => (t.layers_enabled ? t.layers : [t]))
-          .flat();
-      },
-    },
-    template: /* html */ `
-      <div>
-        <ul v-if="selectedTexture" class="list mobile_scrollbar" id="pbr_channel_list">
-          <li
-            v-for="texture in textures"
-            v-bind:texid="texture.uuid"
-            v-on:click.stop="texture.select($event)"
-            v-on:dblclick="openMenu($event)"
-            v-if="canShowChannel(texture)"
-            :key="texture.uuid"
-            class="texture"
-          >
-            <img :src="texture.img.src" :alt="texture.name" width="48" height="48" />
-            <div class="texture_description_wrapper texture_channel_description">
-              <div class="texture_name">
-                <div>{{ texture.name }}</div>
-                <div v-if="texture && texture.texture" class="texture_parent">
-                  {{ texture.texture.name }}
-                </div>
-              </div>
-              <div class="texture_channel_wrapper">
-                <div class="texture_channel">{{ channels[texture.channel].label }}</div>
-                <i class="material-icons texture_particle_icon">{{ channels[texture.channel].icon }}</i>
-              </div>
-            </div>
-          </li>
-        </ul>
-      </div>`,
-  });
-
   registry.channelsPanelStyle = Blockbench.addCSS(/* css */ `
     .texture_channel {
       color: var(--color-text);
@@ -134,7 +73,7 @@ setups.push(() => {
   registry.channelsPanel = new Panel("channels_panel", {
     name: "PBR Channels",
     id: "channels_panel",
-    icon: "tv",
+    icon: "gallery_thumbnail",
     display_condition: {
       modes: ["paint", "edit", "animate"],
       project: true,
@@ -146,7 +85,66 @@ setups.push(() => {
         name: "PBR Channel Controls",
       }),
     ],
-    component,
+    component: {
+      name: "ChannelsPanel",
+      data(): {
+        channels: Record<string, IChannel>;
+      } {
+        return {
+          channels: CHANNELS,
+        };
+      },
+      methods: {
+        openMenu(event: MouseEvent) {
+          registry.channelMenu?.open(event);
+        },
+      },
+      computed: {
+        textures() {
+          if (!Project || !Texture.all.length) {
+            return [];
+          }
+
+          const filterLayers = (layer: TextureLayer) =>
+            layer.visible && layer.channel && layer.channel !== NA_CHANNEL;
+
+          return Texture.selected && Texture.selected.layers_enabled
+            ? Texture.selected.layers.filter(filterLayers)
+            : Texture.all
+                .map((t) =>
+                  t.layers_enabled ? [...t.layers.filter(filterLayers)] : [t],
+                )
+                .flat()
+                .filter(Boolean);
+        },
+      },
+      template: /* html */ `
+      <div>
+        <ul class="list mobile_scrollbar" id="pbr_channel_list">
+          <li
+            v-for="texture in textures"
+            v-on:click.stop="texture.select($event)"
+            v-on:dblclick="openMenu($event)"
+            :key="texture.uuid"
+            class="texture"
+          >
+            <img :src="texture.img.src" :alt="texture.name" width="48" height="48" />
+            <div class="texture_description_wrapper texture_channel_description">
+              <div class="texture_name">
+                <div>{{ texture.name }}</div>
+                <div v-if="texture && texture.texture" class="texture_parent">
+                  {{ texture.texture.name }}
+                </div>
+              </div>
+              <div class="texture_channel_wrapper">
+                <div class="texture_channel">{{ channels[texture.channel].label }}</div>
+                <i class="material-icons texture_particle_icon">{{ channels[texture.channel].icon }}</i>
+              </div>
+            </div>
+          </li>
+        </ul>
+      </div>`,
+    },
     expand_button: true,
     growable: false,
     onFold() {},
@@ -156,7 +154,7 @@ setups.push(() => {
       slot: "left_bar",
       float_position: [0, 0],
       float_size: [400, 300],
-      height: 336,
+      height: 350,
       folded: true,
     },
     insert_after: "layers",
