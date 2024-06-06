@@ -26,7 +26,7 @@ import { disablePbr } from "./lib/disablePbr";
       try {
         value?.delete();
       } catch (err) {
-        console.error(`Failed to delete ${key} action:`, err);
+        console.warn(`Failed to delete ${key} action:`, err);
       }
     });
   };

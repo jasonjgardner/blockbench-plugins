@@ -49,8 +49,13 @@ setups.push(() => {
               delete Project.pbr_materials[texture.uuid][assignedChannel];
               layer.channel = NA_CHANNEL;
             }
-          },
+          }
         );
+
+        // If the layer uuid is equal to the texture uuid, the texture can not be assigned to any other channels
+        if (texture.uuid === layer.uuid) {
+          Project.pbr_materials[texture.uuid] = {};
+        }
 
         Project.pbr_materials[texture.uuid][key] = layer.uuid;
 
@@ -58,7 +63,7 @@ setups.push(() => {
 
         Blockbench.showQuickMessage(
           `Assigned "${layer.name}" to ${channel.label} channel`,
-          2000,
+          2000
         );
 
         applyPbrMaterial();
@@ -116,7 +121,7 @@ setups.push(() => {
 
       Blockbench.showQuickMessage(
         `Unassigned "${layer.name}" from ${prevChannel} channel`,
-        2000,
+        2000
       );
 
       applyPbrMaterial();
@@ -133,7 +138,7 @@ setups.push(() => {
       onOpen() {
         applyPbrMaterial();
       },
-    },
+    }
   );
 
   registry.openChannelMenu = new Action("pbr_channel_menu", {
@@ -165,6 +170,7 @@ setups.push(() => {
 setups.push(() => {
   if (registry.openChannelMenu) {
     MenuBar.addAction(registry.openChannelMenu, "image.0");
+    Texture.prototype.menu.addAction(registry.openChannelMenu, "0");
     TextureLayer.prototype.menu.addAction(registry.openChannelMenu, "0");
   }
 
@@ -173,6 +179,7 @@ setups.push(() => {
 
 teardowns.push(() => {
   MenuBar.removeAction("image.pbr_channel_menu");
+  Texture.prototype.menu.removeAction("pbr_channel_menu");
   TextureLayer.prototype.menu.removeAction("pbr_channel_menu");
   Toolbars.layers.remove(registry.showChannelMenu);
 });
