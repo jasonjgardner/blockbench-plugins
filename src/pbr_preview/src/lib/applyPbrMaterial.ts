@@ -46,7 +46,7 @@ export const applyPbrMaterial = (
         texture.uuid,
       ).getMaterial(materialParams);
 
-      material.side = Canvas.getRenderSide(texture) as THREE.Side,
+      material.side = Canvas.getRenderSide(texture) as THREE.Side;
 
       Project.materials[texture.uuid] =
         THREE.ShaderMaterial.prototype.copy.call(material, projectMaterial);
