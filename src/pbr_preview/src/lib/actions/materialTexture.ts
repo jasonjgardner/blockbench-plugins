@@ -1,5 +1,6 @@
 import { registry, CHANNELS, setups, teardowns } from "../../constants";
 import { three as THREE } from "../../deps";
+import PbrMaterial from "../PbrMaterials";
 
 const colorDataUrl = (color: THREE.Color, src?: HTMLCanvasElement) => {
   const canvas = src ?? document.createElement("canvas");
@@ -31,6 +32,8 @@ setups.push(() => {
         return;
       }
 
+      const channels = CHANNELS;
+
       const texture = new Texture({
         name: "New Material",
         saved: false,
@@ -39,49 +42,84 @@ setups.push(() => {
         layers_enabled: true,
       });
 
-      const filler = colorDataUrl(new THREE.Color(0x808080));
+      const scope =
+        Texture.all.filter((t) => t.selected || t.multi_selected) ??
+        Texture.all;
 
-      if (!filler) {
-        return;
+      const mat = Texture.selected
+        ? new PbrMaterial(scope, Texture.selected.uuid)
+        : null;
+
+      try {
+        const baseColor =
+          mat?.findTexture(CHANNELS.albedo, true)?.canvas.toDataURL() ??
+          Texture.selected?.canvas.toDataURL() ??
+          colorDataUrl(new THREE.Color(0x808080), texture.canvas);
+
+        if (!baseColor) {
+          return;
+        }
+
+        texture.fromDataURL(baseColor);
+
+        const layer = new TextureLayer(
+          {
+            name: channels.albedo.label,
+            visible: true,
+            data_url: baseColor,
+          },
+          texture
+        );
+
+        layer.extend({ channel: channels.albedo.id });
+
+        layer.addForEditing();
+        layer.texture.updateChangesAfterEdit();
+
+        delete channels.albedo;
+      } catch (e) {
+        console.warn("Failed to create base color texture", e);
+        Blockbench.showStatusMessage(
+          "Failed to create base color texture in new material",
+          3000
+        );
       }
 
-      texture.fromDataURL(filler).add().select();
+      texture.add().select();
 
       // Create PBR channels as texture layers for the new texture
-      Object.keys(CHANNELS).forEach((key) => {
+      Object.keys(channels).forEach((key) => {
         const channel = CHANNELS[key];
+        const channelTexture = mat?.findTexture(channel, true);
+
+        const data = channelTexture
+          ? channelTexture.canvas.toDataURL()
+          : colorDataUrl(channel.default ?? new THREE.Color(0));
+
+        if (!data) {
+          return;
+        }
 
         const layer = new TextureLayer(
           {
             name: channel.label,
             visible: true,
+            data_url: data,
           },
-          texture,
+          texture
         );
-
-        layer.setSize(
-          Project.texture_width ?? texture.width,
-          Project.texture_height ?? texture.height,
-        );
-
-        const data = colorDataUrl(
-          channel.default ?? new THREE.Color(0),
-          layer.canvas,
-        );
-
-        if (data) {
-          layer.texture.fromDataURL(data);
-        }
 
         layer.extend({ channel: channel.id });
 
         layer.addForEditing();
+        layer.texture.updateChangesAfterEdit();
       });
+
+      texture.select();
     },
   });
 
   MenuBar.addAction(registry.createMaterialTexture, "tools");
-
   Toolbars.texturelist.add(registry.createMaterialTexture, 3);
 });
 
