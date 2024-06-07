@@ -6,7 +6,6 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --minify --outfile=../../plugins/pbr_preview/pbr_preview.js",
     "dev": "esbuild src/index.ts --bundle --sourcemap --outfile=../../plugins/pbr_preview/pbr_preview.js --watch",
-    "format": "prettier --write src/**/*.ts ./*.mjs",
     "dist": "npm run format && npm run build"
   },
   "keywords": [

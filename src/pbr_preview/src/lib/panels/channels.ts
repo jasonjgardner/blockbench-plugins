@@ -1,5 +1,6 @@
 import type { IChannel } from "../../types";
 import { registry, setups, CHANNELS, NA_CHANNEL } from "../../constants";
+import { getSelectedLayer, getSelectedTexture } from "../util";
 
 setups.push(() => {
   registry.channelsPanelStyle = Blockbench.addCSS(/* css */ `
@@ -81,7 +82,7 @@ setups.push(() => {
       project: true,
       selected: {
         texture: true,
-      }
+      },
     },
     toolbars: [
       new Toolbar("channel_assignment_toolbar", {
@@ -91,44 +92,67 @@ setups.push(() => {
       }),
     ],
     component: {
-    name: "ChannelsPanel",
-    data(): {
-      channels: Record<string, IChannel>;
-    } {
-      return {
-        channels: CHANNELS,
-      };
-    },
-    methods: {
-      openMenu(event: MouseEvent) {
-        registry.channelMenu?.open(event);
+      name: "ChannelsPanel",
+      data(): {
+        channels: Record<string, IChannel>;
+      } {
+        return {
+          channels: CHANNELS,
+        };
       },
-      selectTexture(texture: Texture | TextureLayer) {
-        Modes.options.paint.select();
-        texture.select();
-        texture.scrollTo();
-      }
-    },
-    computed: {
-      textures() {
-        const filterLayers = (layer: TextureLayer) =>
-          layer.visible && layer.channel && layer.channel !== NA_CHANNEL;
-
-        if (TextureLayer.selected) {
-          return TextureLayer.selected.texture.layers.filter(filterLayers);
-        }
-
-        return Texture.selected && Texture.selected.layers_enabled
-          ? Texture.selected.layers.filter(filterLayers)
-          : Texture.all
-              .map((t) =>
-                t.layers_enabled ? [...t.layers.filter(filterLayers)] : [t],
-              )
-              .flat()
-              .filter(Boolean);
+      methods: {
+        openMenu(event: MouseEvent) {
+          registry.channelMenu?.open(event);
+        },
+        selectTexture(texture: Texture | TextureLayer) {
+          Modes.options.paint.select();
+          texture.select();
+          texture.scrollTo();
+        },
+        channelEnabled(texture: Texture) {
+          return (
+            texture.channel &&
+            texture.channel !== NA_CHANNEL &&
+            texture.channel in this.channels
+          );
+        },
+        getImgSrc(texture: Texture | TextureLayer) {
+          return (
+            texture.img?.src ??
+            `data:image/png;base64,${texture.canvas.toDataURL()}`
+          );
+        },
       },
-    },
-    template: /* html */ `
+      computed: {
+        textures() {
+          const filterLayers = (layer: Texture | TextureLayer) =>
+            layer.visible && layer.channel && layer.channel !== NA_CHANNEL;
+
+          const selectedLayer = getSelectedLayer();
+
+          if (selectedLayer) {
+            return selectedLayer.texture.layers.filter(filterLayers);
+          }
+
+          const selectedTexture = getSelectedTexture();
+
+          if (!selectedTexture) {
+            return [];
+          }
+
+          return selectedTexture.layers_enabled
+            ? selectedTexture.layers.filter(filterLayers)
+            : Texture.all
+                .map((t) =>
+                  t.layers_enabled
+                    ? [...t.layers.filter(filterLayers)]
+                    : [filterLayers(t) ? t : null]
+                )
+                .flat()
+                .filter(Boolean);
+        },
+      },
+      template: /* html */ `
       <div>
         <ul class="list mobile_scrollbar" id="pbr_channel_list">
           <li
@@ -138,7 +162,7 @@ setups.push(() => {
             :key="texture.uuid"
             class="texture"
           >
-            <img :src="texture.img.src" :alt="texture.name" width="48" height="48" />
+            <img :src="getImgSrc(texture)" :alt="texture.name" width="48" height="48" />
             <div class="texture_description_wrapper texture_channel_description">
               <div class="texture_name">
                 <div>{{ texture.name }}</div>
@@ -146,7 +170,7 @@ setups.push(() => {
                   {{ texture.texture.name }}
                 </div>
               </div>
-              <div class="texture_channel_wrapper">
+              <div v-if="channelEnabled(texture)" class="texture_channel_wrapper">
                 <div class="texture_channel">{{ channels[texture.channel].label }}</div>
                 <i class="material-icons texture_particle_icon">{{ channels[texture.channel].icon }}</i>
               </div>
@@ -154,7 +178,7 @@ setups.push(() => {
           </li>
         </ul>
       </div>`,
-  },
+    },
     expand_button: true,
     growable: true,
     onFold() {},
