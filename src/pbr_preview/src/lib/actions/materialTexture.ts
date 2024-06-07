@@ -36,6 +36,8 @@ setups.push(() => {
         ...CHANNELS,
       };
 
+      Undo.initEdit({ textures: Texture.all });
+
       const texture = new Texture({
         name: "New Material",
         saved: false,
@@ -114,8 +116,11 @@ setups.push(() => {
         layer.extend({ channel: channel.id });
 
         layer.addForEditing();
-        layer.texture.updateChangesAfterEdit();
       });
+
+      texture.updateChangesAfterEdit();
+
+      Undo.finishEdit("Create Material Texture");
 
       texture.select();
     },
