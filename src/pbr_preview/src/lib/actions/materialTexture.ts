@@ -36,8 +36,6 @@ setups.push(() => {
         ...CHANNELS,
       };
 
-      Undo.initEdit({ textures: Texture.all });
-
       const texture = new Texture({
         name: "New Material",
         saved: false,
@@ -89,40 +87,42 @@ setups.push(() => {
         );
       }
 
-      texture.add().select();
-
       // Create PBR channels as texture layers for the new texture
-      Object.keys(channels).forEach((key) => {
-        const channel = CHANNELS[key];
-        const channelTexture = mat?.findTexture(channel, true);
+      const layers = Object.keys(channels)
+        .map((key) => {
+          const channel = CHANNELS[key];
+          const channelTexture = mat?.findTexture(channel, true);
 
-        const data = channelTexture
-          ? channelTexture.canvas.toDataURL()
-          : colorDataUrl(channel.default ?? new THREE.Color(0));
+          const data = channelTexture
+            ? channelTexture.canvas.toDataURL()
+            : colorDataUrl(channel.default ?? new THREE.Color(0));
 
-        if (!data) {
-          return;
-        }
+          if (!data) {
+            return;
+          }
 
-        const layer = new TextureLayer(
-          {
-            name: channel.label,
-            visible: true,
-            data_url: data,
-          },
-          texture
-        );
+          const layer = new TextureLayer(
+            {
+              name: channel.label,
+              visible: true,
+              data_url: data,
+            },
+            texture
+          );
 
-        layer.extend({ channel: channel.id });
+          layer.extend({ channel: channel.id });
 
-        layer.addForEditing();
-      });
+          return layer;
+        })
+        .filter(Boolean) as TextureLayer[];
 
+      Undo.initEdit({ textures: Texture.all, layers });
+
+      texture.add().select();
+      layers.map((layer) => layer.addForEditing());
       texture.updateChangesAfterEdit();
 
       Undo.finishEdit("Create Material Texture");
-
-      texture.select();
     },
   });
 
