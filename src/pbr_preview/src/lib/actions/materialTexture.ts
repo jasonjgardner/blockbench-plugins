@@ -32,7 +32,9 @@ setups.push(() => {
         return;
       }
 
-      const channels = CHANNELS;
+      const channels = {
+        ...CHANNELS,
+      };
 
       const texture = new Texture({
         name: "New Material",
