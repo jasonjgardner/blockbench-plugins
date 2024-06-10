@@ -1,5 +1,6 @@
 import { three as THREE } from "../deps";
 import PbrMaterial from "./PbrMaterials";
+import { debounce } from "./util";
 
 /**
  * ### Apply PBR Material
@@ -58,3 +59,6 @@ export const applyPbrMaterial = (
 
   Project.pbr_active = materialsSet;
 };
+
+export const debounceApplyPbrMaterial = (wait = 100) =>
+  debounce(applyPbrMaterial, wait);
