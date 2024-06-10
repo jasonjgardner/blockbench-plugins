@@ -62,6 +62,7 @@ export default class PbrMaterial {
   }
 
   getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
+    // TODO: Don't lookup MER in Java projects
     const { emissiveMap, roughnessMap, metalnessMap } = this.merToCanvas();
 
     const normalMap = this.getTexture(CHANNELS.normal);

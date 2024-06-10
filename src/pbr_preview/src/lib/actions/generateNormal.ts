@@ -64,7 +64,19 @@ setups.push(() => {
         texture.uuid
       );
 
-      const aoMap = mat.createAoMap(texture);
+      const normalMap =
+        mat.findTexture(CHANNELS.normal) ?? mat.createNormalMap(texture);
+
+      if (!normalMap) {
+        // TODO: Use Validator
+        Blockbench.showQuickMessage(
+          "Unable to generate ambient occlusion map without a normal map",
+          2000
+        );
+        return;
+      }
+
+      const aoMap = mat.createAoMap(normalMap);
 
       if (aoMap) {
         mat.saveTexture(CHANNELS.ao, aoMap);
