@@ -27,7 +27,7 @@ export const applyPbrMaterial = (
       const face = item.faces[key];
       const texture = face.getTexture();
 
-      if (!texture) {
+      if (!texture || !face.enabled) {
         return;
       }
 
