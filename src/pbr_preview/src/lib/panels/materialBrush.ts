@@ -19,12 +19,18 @@ setups.push(() => {
       }),
       new Toolbar("material_brush_presets_toolbar", {
         id: "material_brush_presets_toolbar",
-        children: ["load_brush_preset", "brush_presets"],
+        children: [
+          "load_brush_preset",
+          "brush_presets",
+          "slider_brush_size",
+          "slider_brush_opacity",
+          "slider_brush_softness",
+        ],
         name: "Brush Presets",
         label: true,
       }),
     ],
-    display_condition: {
+    condition: {
       modes: ["paint"],
       project: true,
     },
