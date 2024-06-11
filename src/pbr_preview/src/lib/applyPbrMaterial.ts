@@ -8,8 +8,8 @@ function applyToFace(
 ) {
   const texture = face.getTexture();
 
-  if (!texture || !face.enabled || !Project) {
-    return false;
+  if (!texture || !Project) {
+    return null;
   }
 
   const projectMaterial = Project.materials[texture.uuid];
@@ -32,34 +32,54 @@ function applyToFace(
     projectMaterial
   );
 
-  Canvas.updateAllFaces(texture);
+  return texture;
+}
 
-  return true;
+function updateFaces(applied: Record<string, Texture>) {
+  return (
+    Object.values(applied).filter((texture) => {
+      if (texture) {
+        Canvas.updateAllFaces(texture);
+        return true;
+      }
+
+      return false;
+    }).length > 0
+  );
 }
 
 function applyToMesh(
   mesh: Mesh,
   materialParams: THREE.MeshStandardMaterialParameters
 ) {
-  mesh.forAllFaces((face) => applyToFace(face, materialParams));
-  return true;
+  const applied: Record<string, Texture> = {};
+  mesh.forAllFaces((face) => {
+    const texture = applyToFace(face, materialParams);
+
+    if (texture) {
+      applied[texture.uuid] = texture;
+    }
+  });
+
+  return updateFaces(applied);
 }
 
 function applyToCube(
   cube: Cube,
   materialParams: THREE.MeshStandardMaterialParameters
 ) {
-  let materialsSet = false;
+  const applied: Record<string, Texture> = {};
 
   Object.keys(cube.faces).forEach((key) => {
     const face = cube.faces[key];
+    const texture = applyToFace(face, materialParams);
 
-    if (applyToFace(face, materialParams)) {
-      materialsSet = true;
+    if (texture) {
+      applied[texture.uuid] = texture;
     }
   });
 
-  return materialsSet;
+  return updateFaces(applied);
 }
 
 /**
