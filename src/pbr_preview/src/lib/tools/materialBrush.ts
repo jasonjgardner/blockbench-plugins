@@ -446,6 +446,8 @@ setups.push(() => {
     icon: "view_in_ar",
     paintTool: true,
     cursor: "cell",
+    category: "tools",
+    toolbar: "brush",
     condition: () =>
       Modes.paint &&
       !!Project &&
@@ -501,6 +503,7 @@ setups.push(() => {
       Painter.startPaintToolCanvas(data, data.event);
     },
     onSelect() {
+      Painter.updateNslideValues();
       applyPbrMaterial();
     },
     click() {
@@ -598,7 +601,6 @@ setups.push(() => {
 
   MenuBar.addAction(registry.materialBrushTool, "tools.0");
 });
-
 teardowns.push(() => {
   MenuBar.removeAction("tools.material_brush");
 });
