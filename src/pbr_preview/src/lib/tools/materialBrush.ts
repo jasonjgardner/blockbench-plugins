@@ -1,7 +1,11 @@
 import { registry, CHANNELS, setups, teardowns } from "../../constants";
-import { applyPbrMaterial } from "../applyPbrMaterial";
+import {
+  applyPbrMaterial,
+  debounceApplyPbrMaterial,
+} from "../applyPbrMaterial";
 import { MaterialBrush } from "../MaterialBrush";
 import { vue as Vue, three as THREE } from "../../deps";
+import { getSelectedTexture } from "../util";
 
 const generatePreviewImage = (settings: object) => {
   const renderer = new THREE.WebGLRenderer({
@@ -448,11 +452,17 @@ setups.push(() => {
     cursor: "cell",
     category: "tools",
     toolbar: "brush",
-    condition: () =>
-      Modes.paint &&
-      !!Project &&
-      Project.selected_texture &&
-      Project.selected_texture.layers_enabled,
+    condition: {
+      project: true,
+      selected: {
+        texture: true,
+      },
+      modes: ["paint"],
+      method() {
+        return getSelectedTexture()?.layers_enabled ?? false;
+      },
+    },
+    allowed_view_modes: "textured",
     brush: {
       blend_modes: false,
       shapes: true,
@@ -507,7 +517,7 @@ setups.push(() => {
       applyPbrMaterial();
     },
     click() {
-      applyPbrMaterial();
+      debounceApplyPbrMaterial();
     },
   });
 
@@ -516,7 +526,9 @@ setups.push(() => {
     name: "Material Brush Presets",
     description: "Load or save a brush preset",
     category: "paint",
-    condition: () => !!Project,
+    condition: {
+      project: true,
+    },
     click() {
       registry.userMaterialBrushPresets = new Dialog("user_brush_presets", {
         id: "user_brush_presets",
