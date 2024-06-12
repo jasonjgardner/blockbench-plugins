@@ -6,13 +6,11 @@ import { createNormalMap, createAoMap } from "../normalMap";
 
 setups.push(() => {
   registry.generateNormal = new Action("generate_normal", {
-    icon: "altitude",
+    icon: CHANNELS.normal.icon ?? "altitude",
     name: "Generate Normal Map",
     description: "Generates a normal map from the height map",
-    condition: () =>
-      (TextureLayer.selected || Texture.all.find((t) => t.selected)) !==
-      undefined,
-    click() {
+    condition: () => (getSelectedLayer() ?? getSelectedTexture()) !== null,
+    click(e) {
       const texture: Texture | TextureLayer =
         getSelectedLayer() ?? getSelectedTexture() ?? Texture.getDefault();
 
@@ -27,7 +25,7 @@ setups.push(() => {
         return;
       }
 
-      normalMap.select();
+      normalMap.select(e);
 
       new PbrMaterial(
         texture instanceof Texture && texture.layers_enabled

@@ -195,8 +195,7 @@ export default class PbrMaterial {
     channel: "r" | "g" | "b" | "a"
   ) {
     const canvas = texture.canvas;
-    const width = canvas.width;
-    const height = canvas.height;
+    const { width, height } = canvas;
 
     const ctx = canvas.getContext("2d");
 
@@ -221,9 +220,10 @@ export default class PbrMaterial {
     const channelData = new Uint8ClampedArray(width * height * 4);
 
     for (let idx = 0; idx < data.length; idx += 4) {
-      channelData[idx] = data[idx + channelIdx];
-      channelData[idx + 1] = data[idx + channelIdx];
-      channelData[idx + 2] = data[idx + channelIdx];
+      const value = data[idx + channelIdx];
+      channelData[idx] = value;
+      channelData[idx + 1] = value;
+      channelData[idx + 2] = value;
       channelData[idx + 3] = 255;
     }
 
