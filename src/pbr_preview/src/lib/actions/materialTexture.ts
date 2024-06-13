@@ -1,26 +1,6 @@
 import { registry, CHANNELS, setups, teardowns } from "../../constants";
 import { three as THREE } from "../../deps";
 import PbrMaterial from "../PbrMaterials";
-
-const colorDataUrl = (color: THREE.Color, src?: HTMLCanvasElement) => {
-  const canvas = src ?? document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-
-  if (!ctx) {
-    return null;
-  }
-
-  const width = Math.max(Project ? Project.texture_width : 16, 16);
-  const height = Math.max(Project ? Project.texture_height : 16, 16);
-
-  canvas.width = width;
-  canvas.height = height;
-
-  ctx.fillStyle = `rgb(${color.r * 255}, ${color.g * 255}, ${color.b * 255})`;
-  ctx.fillRect(0, 0, width, height);
-
-  return canvas.toDataURL();
-};
 import { colorDataUrl, generatePreviewImage } from "../util";
 
 setups.push(() => {
@@ -48,6 +28,8 @@ setups.push(() => {
         keep_size: false,
         layers_enabled: true,
       });
+
+      texture.extend({ material: true });
 
       const scope =
         Texture.all.filter((t) => t.selected || t.multi_selected) ??
