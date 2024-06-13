@@ -1,4 +1,9 @@
 import { three as THREE } from "../deps";
+
+/**
+ * Attempts to find the selected texture/layer using various methods
+ * @returns Texture | null
+ */
 export function getSelectedTexture(): Texture | null {
   if (Texture.selected) {
     return Texture.selected;
@@ -19,6 +24,10 @@ export function getSelectedTexture(): Texture | null {
   return Project.textures.find((t) => t.selected) ?? null; // Texture.getDefault();
 }
 
+/**
+ * Attempts to find the currently selected layer
+ * @returns TextureLayer | null
+ */
 export function getSelectedLayer(): TextureLayer | null {
   if (TextureLayer.selected) {
     return TextureLayer.selected;
@@ -140,6 +149,8 @@ export function generatePreviewImage(
 
   const data = renderer.domElement.toDataURL();
 
+  material.dispose();
+  renderer.clear();
   renderer.dispose();
 
   return data;
@@ -150,6 +161,7 @@ export function colorDataUrl(color: THREE.Color, src?: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d");
 
   if (!ctx) {
+    canvas.remove();
     return null;
   }
 
@@ -162,5 +174,11 @@ export function colorDataUrl(color: THREE.Color, src?: HTMLCanvasElement) {
   ctx.fillStyle = `rgb(${color.r * 255}, ${color.g * 255}, ${color.b * 255})`;
   ctx.fillRect(0, 0, width, height);
 
-  return canvas.toDataURL();
+  const data = canvas.toDataURL();
+
+  if (!src) {
+    canvas.remove();
+  }
+
+  return data;
 }
