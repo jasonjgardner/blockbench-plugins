@@ -556,6 +556,8 @@ setups.push(() => {
         cancelIndex: 0,
         confirmIndex: 2,
         onButton(idx, event) {
+          registry.materialBrushTool?.select();
+
           if (idx !== 1) {
             return;
           }
