@@ -4,48 +4,8 @@ import {
   debounceApplyPbrMaterial,
 } from "../applyPbrMaterial";
 import { MaterialBrush } from "../MaterialBrush";
-import { vue as Vue, three as THREE } from "../../deps";
-import { getSelectedTexture } from "../util";
-
-const generatePreviewImage = (settings: object) => {
-  const renderer = new THREE.WebGLRenderer({
-    alpha: true,
-    antialias: true,
-  });
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(75, 96 / 96, 0.1, 1000);
-
-  const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
-  scene.add(ambientLight);
-
-  const pointLight = new THREE.PointLight(0xffffff, 1, 100);
-  pointLight.position.set(5, 5, 5);
-  scene.add(pointLight);
-  const geometry = new THREE.SphereGeometry(1, 32, 32);
-
-  const material = new THREE.MeshStandardMaterial({
-    color: settings.albedo,
-    metalness: settings.metalness ?? 0,
-    roughness: settings.roughness ?? 1,
-    emissive: settings.emissive,
-    bumpScale: settings.height ?? 0,
-    envMap: PreviewScene.active?.cubemap ?? null,
-    envMapIntensity: 0.5,
-  });
-
-  const sphere = new THREE.Mesh(geometry, material);
-  scene.add(sphere);
-
-  camera.position.x = 0;
-  camera.position.y = 0;
-  camera.position.z = 2;
-
-  renderer.setSize(96, 96);
-
-  renderer.render(scene, camera);
-
-  return renderer.domElement.toDataURL();
-};
+import { vue as Vue } from "../../deps";
+import { getSelectedTexture, generatePreviewImage } from "../util";
 
 const STORAGE_NAMESPACE = "materialBrushPresets";
 

@@ -21,6 +21,7 @@ const colorDataUrl = (color: THREE.Color, src?: HTMLCanvasElement) => {
 
   return canvas.toDataURL();
 };
+import { colorDataUrl, generatePreviewImage } from "../util";
 
 setups.push(() => {
   registry.createMaterialTexture = new Action("create_material_texture", {
