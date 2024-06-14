@@ -85,7 +85,7 @@ export default class PbrMaterial {
       aoMap: this.getTexture(CHANNELS.ao),
       bumpMap: this.getTexture(CHANNELS.height),
       normalMap,
-      normalScale: new THREE.Vector2(1, 1),
+      normalScale: new THREE.Vector2(-1, 1),
       metalnessMap,
       metalness: metalnessMap ? 1 : 0,
       roughnessMap,

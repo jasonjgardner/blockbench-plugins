@@ -107,10 +107,12 @@ export function generatePreviewImage(
         height?: number;
       })
 ) {
-  const renderer = new THREE.WebGLRenderer({
-    alpha: true,
-    antialias: true,
-  });
+  const renderer =
+    MediaPreview.renderer ??
+    new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: true,
+    });
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(75, 96 / 96, 0.1, 1000);
 
@@ -150,8 +152,12 @@ export function generatePreviewImage(
   const data = renderer.domElement.toDataURL();
 
   material.dispose();
-  renderer.clear();
-  renderer.dispose();
+  geometry.dispose();
+
+  if (!MediaPreview.renderer) {
+    renderer.clear();
+    renderer.dispose();
+  }
 
   return data;
 }
