@@ -1,3 +1,4 @@
+import type { IChannel } from "../../types";
 import { registry, CHANNELS, setups, teardowns } from "../../constants";
 import {
   applyPbrMaterial,
@@ -87,6 +88,21 @@ const applyPreset = ({
     ColorPanel.set(albedo);
   }
 };
+
+const materialBrushSliderCondition = ({ id }: IChannel) =>
+  Condition({
+    project: true,
+    tools: ["material_brush"],
+    method() {
+      const texture = getSelectedTexture();
+
+      return (
+        (texture?.layers_enabled &&
+          texture.layers.find(({ channel }) => channel && channel === id) !==
+            undefined) === true
+      );
+    },
+  });
 
 const userPresetsDialogComponent = Vue.extend({
   name: "UserPresetsDialog",
@@ -276,78 +292,45 @@ setups.push(() => {
     filter: drop-shadow(0 0 2px var(--color-shadow));
   }
 
-  .delete_preset .material-icons {
-    font-size: 0.825em;
-  }
-
   .delete_preset:hover {
     background: transparent;
     color: var(--color-accent);
   }
 
+  .delete_preset .material-icons {
+    font-size: 0.825em;
+  }
+
   .delete_preset:hover .material-icons {
     color: var(--color-accent);
-  }
-  `);
+  }`);
 
   registry.brushMetalnessSlider = new NumSlider("slider_brush_metalness", {
     category: "paint",
     name: "Metalness",
     description: "Adjust the metalness of the brush",
+    tool_setting: "brush_metalness",
     settings: {
       min: 0,
       max: 1,
       step: 0.01,
       default: 0,
     },
-    condition: () => {
-      if (!Project) {
-        return false;
-      }
-
-      const texture = Project.selected_texture;
-
-      if (!texture?.layers_enabled) {
-        return false;
-      }
-
-      return (
-        texture.layers.find(
-          // @ts-expect-error Channel property is an extension of TextureLayer
-          ({ channel }) => channel === CHANNELS.metalness.id
-        ) !== undefined
-      );
-    },
+    condition: () => materialBrushSliderCondition(CHANNELS.metalness),
   });
 
   registry.brushRoughnessSlider = new NumSlider("slider_brush_roughness", {
     category: "paint",
     name: "Roughness",
     description: "Adjust the roughness of the brush",
+    tool_setting: "brush_roughness",
     settings: {
       min: 0,
       max: 1,
       step: 0.01,
       default: 1,
     },
-    condition: () => {
-      if (!Project) {
-        return false;
-      }
-
-      const texture = Project.selected_texture;
-
-      if (!texture?.layers_enabled) {
-        return false;
-      }
-
-      return (
-        texture.layers.find(
-          // @ts-expect-error Channel property is an extension of TextureLayer
-          ({ channel }) => channel === CHANNELS.roughness.id
-        ) !== undefined
-      );
-    },
+    condition: () => materialBrushSliderCondition(CHANNELS.roughness),
   });
 
   registry.brushEmissiveColor = new ColorPicker("brush_emissive_color", {
@@ -355,53 +338,22 @@ setups.push(() => {
     name: "Emissive",
     description: "Adjust the emissive color of the brush",
     value: "#000000",
-    condition: () => {
-      if (!Project) {
-        return false;
-      }
-
-      const texture = Project.selected_texture;
-
-      if (!texture?.layers_enabled) {
-        return false;
-      }
-
-      return (
-        texture.layers.find(
-          // @ts-expect-error Channel property is an extension of TextureLayer
-          ({ channel }) => channel === CHANNELS.emissive.id
-        ) !== undefined
-      );
-    },
+    tool_setting: "brush_emissive",
+    condition: () => materialBrushSliderCondition(CHANNELS.emissive),
   });
 
   registry.brushHeightSlider = new NumSlider("slider_brush_height", {
     category: "paint",
     name: "Height",
     description: "Adjust the height of the brush",
+    tool_setting: "brush_height",
     settings: {
       min: 0,
       max: 1,
       step: 0.01,
       default: 0.5,
     },
-    condition: () => {
-      if (!Project) {
-        return false;
-      }
-
-      const texture = Project.selected_texture;
-
-      if (!texture?.layers_enabled) {
-        return false;
-      }
-
-      return (
-        // @ts-expect-error Channel property is an extension of TextureLayer
-        texture.layers.find(({ channel }) => channel === CHANNELS.height.id) !==
-        undefined
-      );
-    },
+    condition: () => materialBrushSliderCondition(CHANNELS.height),
   });
 
   registry.materialBrushTool = new Tool("material_brush", {
@@ -423,6 +375,12 @@ setups.push(() => {
       },
     },
     allowed_view_modes: "textured",
+    tool_settings: {
+      brush_metalness: 0,
+      brush_roughness: 1,
+      brush_emissive: "#000000",
+      brush_height: 0.5,
+    },
     brush: {
       blend_modes: false,
       shapes: true,
