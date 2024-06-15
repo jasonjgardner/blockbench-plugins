@@ -1,7 +1,11 @@
 import { registry, CHANNELS, setups, teardowns } from "../../constants";
 import { three as THREE } from "../../deps";
 import PbrMaterial from "../PbrMaterials";
-import { colorDataUrl, generatePreviewImage } from "../util";
+import {
+  colorDataUrl,
+  generatePreviewImage,
+  getSelectedTexture,
+} from "../util";
 
 setups.push(() => {
   registry.createMaterialTexture = new Action("create_material_texture", {
@@ -35,14 +39,14 @@ setups.push(() => {
         Texture.all.filter((t) => t.selected || t.multi_selected) ??
         Texture.all;
 
-      const mat = Texture.selected
-        ? new PbrMaterial(scope, Texture.selected.uuid)
-        : null;
+      const selected = getSelectedTexture();
+
+      const mat = selected ? new PbrMaterial(scope, selected.uuid) : null;
 
       try {
         const baseColor =
           mat?.findTexture(CHANNELS.albedo, true)?.canvas.toDataURL() ??
-          Texture.selected?.canvas.toDataURL() ??
+          selected?.canvas.toDataURL() ??
           colorDataUrl(new THREE.Color(0x808080), texture.canvas);
 
         if (!baseColor) {
@@ -56,12 +60,12 @@ setups.push(() => {
             name: channels.albedo.label,
             visible: true,
             data_url: baseColor,
+            keep_size: true,
           },
           texture
         );
 
         layer.extend({ channel: channels.albedo.id });
-
         layer.addForEditing();
         layer.texture.updateChangesAfterEdit();
 
@@ -93,6 +97,7 @@ setups.push(() => {
               name: channel.label,
               visible: true,
               data_url: data,
+              keep_size: true,
             },
             texture
           );
@@ -110,7 +115,23 @@ setups.push(() => {
       texture.updateChangesAfterEdit();
 
       Undo.finishEdit("Create Material Texture");
+
+      if (mat) {
+        texture.updateSource(generatePreviewImage(mat.getMaterial()));
+      }
     },
+  });
+
+  Blockbench.on("save_project", function generateMaterialThumbnail() {
+    Texture.all.map((texture) => {
+      if (!texture.material) {
+        return;
+      }
+
+      const mat = new PbrMaterial(texture.layers, texture.uuid);
+
+      texture.updateSource(generatePreviewImage(mat.getMaterial()));
+    });
   });
 
   MenuBar.addAction(registry.createMaterialTexture, "tools");
