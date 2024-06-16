@@ -136,4 +136,5 @@ setups.push(() => {
 
 teardowns.push(() => {
   MenuBar.removeAction("tools.create_material_texture");
+  Toolbars.texturelist.remove("tools.create_material_texture");
 });
