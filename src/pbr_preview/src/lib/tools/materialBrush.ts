@@ -389,7 +389,13 @@ setups.push(() => {
       opacity: true,
       offset_even_radius: true,
       floor_coordinates: true,
-      changePixel(x, y, px, alpha, { size, softness, texture }) {
+      changePixel(
+        pxX, // Pixel that is changing
+        pxY,
+        px,
+        alpha,
+        { size, softness, texture, x, y }
+      ) {
         const mat = MaterialBrush.fromSettings();
 
         const matChannels = Object.keys(mat.colors);
@@ -412,7 +418,7 @@ setups.push(() => {
           // TODO: Let softness affect the brush
 
           layer.ctx.fillStyle = fill.getStyle();
-          layer.ctx.fillRect(size * x, size * y, size, size);
+          layer.ctx.fillRect(pxX, pxY, 1, 1);
 
           if (layer.selected) {
             rgba = {
