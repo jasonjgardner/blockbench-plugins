@@ -62,6 +62,11 @@ export function getOutputBaseName() {
 
 export function getMaterialsFromProject() {
   const materials: Record<string, THREE.MeshStandardMaterial> = {};
+
+  if (!Project) {
+    return materials;
+  }
+
   Project.elements.forEach((item) => {
     if (!(item instanceof Cube)) {
       return;
@@ -106,7 +111,7 @@ export function generatePreviewImage(
         emissive: THREE.ColorRepresentation;
         height?: number;
       })
-) {
+): string {
   const renderer =
     MediaPreview.renderer ??
     new THREE.WebGLRenderer({
@@ -152,7 +157,6 @@ export function generatePreviewImage(
   const data = renderer.domElement.toDataURL();
 
   material.dispose();
-  geometry.dispose();
 
   if (!MediaPreview.renderer) {
     renderer.clear();

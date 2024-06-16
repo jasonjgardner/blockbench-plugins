@@ -1,4 +1,10 @@
-import { registry, CHANNELS, setups, teardowns } from "../../constants";
+import {
+  registry,
+  CHANNELS,
+  setups,
+  teardowns,
+  NA_CHANNEL,
+} from "../../constants";
 import { three as THREE } from "../../deps";
 import PbrMaterial from "../PbrMaterials";
 import {
@@ -29,8 +35,6 @@ setups.push(() => {
         name: "New Material",
         saved: false,
         particle: false,
-        keep_size: false,
-        layers_enabled: true,
       });
 
       texture.extend({ material: true });
@@ -68,7 +72,7 @@ setups.push(() => {
         layer.extend({ channel: channels.albedo.id });
         layer.addForEditing();
         layer.texture.updateChangesAfterEdit();
-
+        mat?.saveTexture(channels.albedo, layer);
         delete channels.albedo;
       } catch (e) {
         console.warn("Failed to create base color texture", e);
@@ -104,6 +108,8 @@ setups.push(() => {
 
           layer.extend({ channel: channel.id });
 
+          mat?.saveTexture(channel, layer);
+
           return layer;
         })
         .filter(Boolean) as TextureLayer[];
@@ -111,27 +117,17 @@ setups.push(() => {
       Undo.initEdit({ textures: Texture.all, layers });
 
       texture.add().select();
-      layers.map((layer) => layer.addForEditing());
+      texture.activateLayers();
+      layers.map((layer) => {
+        layer.addForEditing();
+
+        texture.width = Math.max(texture.width, layer.img.width);
+        texture.height = Math.max(texture.height, layer.img.height);
+      });
       texture.updateChangesAfterEdit();
 
       Undo.finishEdit("Create Material Texture");
-
-      if (mat) {
-        texture.updateSource(generatePreviewImage(mat.getMaterial()));
-      }
     },
-  });
-
-  Blockbench.on("save_project", function generateMaterialThumbnail() {
-    Texture.all.map((texture) => {
-      if (!texture.material) {
-        return;
-      }
-
-      const mat = new PbrMaterial(texture.layers, texture.uuid);
-
-      texture.updateSource(generatePreviewImage(mat.getMaterial()));
-    });
   });
 
   MenuBar.addAction(registry.createMaterialTexture, "tools");

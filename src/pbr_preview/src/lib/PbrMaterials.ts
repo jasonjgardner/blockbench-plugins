@@ -1,6 +1,7 @@
 import type { IChannel } from "../types";
 import { CHANNELS, NA_CHANNEL } from "../constants";
 import { three as THREE } from "../deps";
+import { generatePreviewImage } from "./util";
 
 const getProjectTextures = (layers = true) => {
   const allTextures = Project ? Project.textures ?? Texture.all : Texture.all;
@@ -99,6 +100,11 @@ export default class PbrMaterial {
       transparent: true,
       ...options,
     });
+  }
+
+  renderMaterialPreview() {
+    const previewImage = generatePreviewImage(this.getMaterial());
+    return previewImage;
   }
 
   saveTexture(channel: IChannel, texture: Texture | TextureLayer) {
