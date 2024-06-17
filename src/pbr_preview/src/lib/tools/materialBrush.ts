@@ -5,7 +5,7 @@ import {
   debounceApplyPbrMaterial,
 } from "../applyPbrMaterial";
 import { MaterialBrush } from "../MaterialBrush";
-import { vue as Vue } from "../../deps";
+import { vue as Vue, three as THREE } from "../../deps";
 import { getSelectedTexture, generatePreviewImage } from "../util";
 
 const STORAGE_NAMESPACE = "materialBrushPresets";
@@ -400,6 +400,8 @@ setups.push(() => {
 
         const matChannels = Object.keys(mat.colors);
 
+        const brushSize = Math.floor(size - (softness * size) / 100);
+
         let rgba = px;
 
         texture.layers.forEach((layer) => {
@@ -415,7 +417,19 @@ setups.push(() => {
             return;
           }
 
-          // TODO: Let softness affect the brush
+          const distance = Math.sqrt((x - pxX) ** 2 + (y - pxY) ** 2);
+          const fallOff = Math.min(1, distance / brushSize);
+
+          // Transition colors at soft edges
+          if (x % brushSize <= fallOff && y % brushSize <= fallOff) {
+            const currentPixel = layer.ctx.getImageData(pxX, pxY, 1, 1).data;
+            const currentFill = new THREE.Color(
+              `rgb(${currentPixel[0]}, ${currentPixel[1]}, ${currentPixel[2]})`
+            );
+
+            // Set the fill color to the lerp between the current pixel and the new color
+            fill.lerp(currentFill, 1);
+          }
 
           layer.ctx.fillStyle = fill.getStyle();
           layer.ctx.fillRect(pxX, pxY, 1, 1);

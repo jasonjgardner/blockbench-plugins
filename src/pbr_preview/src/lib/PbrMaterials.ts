@@ -152,8 +152,9 @@ export default class PbrMaterial {
     const materialData = Project.pbr_materials[this._materialUuid];
 
     // Don't infer the channel if it has already been assigned to NA_CHANNEL
-    if (!materialData && inference && channel !== NA_CHANNEL) {
-      const filenameRegex = new RegExp(`_*${channel}(\.[^.]+)?$`, "i");
+    if (inference && !materialData && channel !== NA_CHANNEL) {
+      const filenameRegex =
+        CHANNELS[channel].regex ?? new RegExp(`_*${channel}(\.[^.]+)?$`, "i");
       return this._scope.find((t) => filenameRegex.test(t.name)) ?? null;
     }
 
