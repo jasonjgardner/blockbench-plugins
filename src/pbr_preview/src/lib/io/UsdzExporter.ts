@@ -92,7 +92,6 @@ class USDZExporter {
   }
 }
 
-// TODO: Remove redundant function. It is only used to get the image blob here.
 function imageToCanvas(
   image: HTMLImageElement | HTMLCanvasElement | OffscreenCanvas | ImageBitmap,
   color?: string
@@ -296,10 +295,9 @@ function buildVector2Array(
     const x = attribute.getX(i);
     const y = attribute.getY(i);
     array.push(
-      `(${x.toPrecision(PRECISION)}, ${1 - Number(y.toPrecision(PRECISION))})`
+      `(${x.toPrecision(PRECISION)}, ${Number(y.toPrecision(PRECISION))})`
     );
   }
-
   return array.join(", ");
 }
 
