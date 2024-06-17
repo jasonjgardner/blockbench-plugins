@@ -1,6 +1,7 @@
 import type { IChannel } from "../types";
 import { CHANNELS, NA_CHANNEL } from "../constants";
 import { three as THREE } from "../deps";
+import { generatePreviewImage } from "./util";
 
 const getProjectTextures = (layers = true) => {
   const allTextures = Project ? Project.textures ?? Texture.all : Texture.all;
@@ -101,6 +102,11 @@ export default class PbrMaterial {
     });
   }
 
+  renderMaterialPreview() {
+    const previewImage = generatePreviewImage(this.getMaterial());
+    return previewImage;
+  }
+
   saveTexture(channel: IChannel, texture: Texture | TextureLayer) {
     if (!Project) {
       return;
@@ -140,15 +146,17 @@ export default class PbrMaterial {
       return materialChannel;
     }
 
-    const channel = typeof name === "string" ? name : name.id;
+    const [channel, regex] =
+      typeof name === "string"
+        ? [name, new RegExp(`_*${name}(\.[^.]+)?$`, "i")]
+        : [name.id, name.regex ?? new RegExp(`_*${name.id}(\.[^.]+)?$`, "i")];
 
     Project.pbr_materials = Project.pbr_materials ?? {};
     const materialData = Project.pbr_materials[this._materialUuid];
 
     // Don't infer the channel if it has already been assigned to NA_CHANNEL
-    if (!materialData && inference && channel !== NA_CHANNEL) {
-      const filenameRegex = new RegExp(`_*${channel}(\.[^.]+)?$`, "i");
-      return this._scope.find((t) => filenameRegex.test(t.name)) ?? null;
+    if (inference && !materialData && channel !== NA_CHANNEL) {
+      return this._scope.find((t) => regex?.test(t.name)) ?? null;
     }
 
     const textureUuid = materialData?.[channel];
