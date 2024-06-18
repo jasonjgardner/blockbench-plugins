@@ -146,7 +146,10 @@ export default class PbrMaterial {
       return materialChannel;
     }
 
-    const channel = typeof name === "string" ? name : name.id;
+    const [channel, regex] =
+      typeof name === "string"
+        ? [name, new RegExp(`_*${name}(\.[^.]+)?$`, "i")]
+        : [name.id, name.regex ?? new RegExp(`_*${name.id}(\.[^.]+)?$`, "i")];
 
     Project.pbr_materials = Project.pbr_materials ?? {};
     const materialData = Project.pbr_materials[this._materialUuid];

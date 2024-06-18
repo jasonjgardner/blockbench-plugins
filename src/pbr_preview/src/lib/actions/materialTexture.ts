@@ -15,7 +15,7 @@ import {
 
 setups.push(() => {
   registry.createMaterialTexture = new Action("create_material_texture", {
-    icon: "stacks",
+    icon: "deployed_code",
     name: "Create Material Texture",
     description: "Creates a new texture for a PBR material",
     condition: {
@@ -136,5 +136,5 @@ setups.push(() => {
 
 teardowns.push(() => {
   MenuBar.removeAction("tools.create_material_texture");
-  Toolbars.texturelist.remove("tools.create_material_texture");
+  Toolbars.texturelist.remove("create_material_texture");
 });
