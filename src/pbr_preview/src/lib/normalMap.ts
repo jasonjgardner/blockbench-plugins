@@ -207,3 +207,73 @@ export function createAoMap(
 
   return aoMapTexture;
 }
+
+export function convertNormalMap(
+  texture: Texture | TextureLayer,
+  orientation: "DirectX" | "OpenGL" = "DirectX"
+): string | null {
+  const textureCtx = texture.canvas.getContext("2d");
+
+  if (!textureCtx) {
+    return null;
+  }
+
+  const width = Math.max(
+    texture.img.width ?? texture.canvas.width,
+    Project ? Project.texture_width : 0,
+    16
+  );
+  const height = Math.max(
+    texture.img.height ?? texture.canvas.height,
+    Project ? Project.texture_height : 0,
+    16
+  );
+
+  const { data: textureData } = textureCtx.getImageData(0, 0, width, height);
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  if (!ctx) {
+    return null;
+  }
+
+  const getNormal = (x: number, y: number): number[] => {
+    const idx = (x + y * width) * 4;
+    return [
+      (textureData[idx] / 255) * 2 - 1,
+      (textureData[idx + 1] / 255) * 2 - 1,
+      (textureData[idx + 2] / 255) * 2 - 1,
+    ];
+  };
+
+  canvas.width = width;
+  canvas.height = height;
+
+  ctx.drawImage(texture.img, 0, 0, width, height);
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+
+  const data = imageData.data;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const normal = getNormal(x, y);
+
+      const [dx, dy] =
+        orientation === "DirectX"
+          ? [normal[0], normal[1]]
+          : [-normal[0], -normal[1]];
+
+      const idx = (y * width + x) * 4;
+      data[idx] = ((dx + 1) / 2) * 255;
+      data[idx + 1] = ((dy + 1) / 2) * 255;
+      data[idx + 2] = 0;
+      data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+
+  return canvas.toDataURL();
+}
