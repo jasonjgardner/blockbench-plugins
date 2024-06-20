@@ -3,10 +3,12 @@
  * Generates a normal map from a height map texture
  * @param texture Height map texture
  * @param heightInAlpha Whether or not to store the height map in the alpha channel (Used in labPBR shaders for POM)
+ * @param orientation Whether or not to flip the normal map vertically
  * @returns Normal map texture or layer if successful, otherwise `null`
  */
 export function createNormalMap(
   texture: Texture | TextureLayer,
+  orientation: "DirectX" | "OpenGL" = "DirectX",
   heightInAlpha = false
 ): Texture | TextureLayer | null {
   const textureCtx = texture.canvas.getContext("2d");
@@ -63,8 +65,8 @@ export function createNormalMap(
 
       const dx = right - left;
       const dy = bottom - top;
-
-      const normal = normalize([-dx, -dy, 1]);
+      const vector = orientation === "DirectX" ? [dx, dy, 1] : [-dx, -dy, 1];
+      const normal = normalize(vector);
 
       const idx = (y * width + x) * 4;
       data[idx] = ((normal[0] + 1) / 2) * 255;
