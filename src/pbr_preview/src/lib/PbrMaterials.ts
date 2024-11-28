@@ -1,10 +1,16 @@
-import type { IChannel } from "../types";
+import type {
+  IChannel,
+  MeshMaterialTypes,
+  PbrProject,
+  PbrTexture,
+} from "../types";
 import { CHANNELS, NA_CHANNEL } from "../constants";
 import { three as THREE } from "../deps";
+
 import { generatePreviewImage } from "./util";
 
 const getProjectTextures = (layers = true) => {
-  const allTextures = Project ? Project.textures ?? Texture.all : Texture.all;
+  const allTextures = Project ? (Project.textures ?? Texture.all) : Texture.all;
 
   if (!layers) {
     return allTextures;
@@ -23,14 +29,20 @@ const getProjectTextures = (layers = true) => {
  * or a project's textures if no layers are available.
  */
 export default class PbrMaterial {
-  private _scope: Array<Texture | TextureLayer>;
+  private _scope: PbrTexture[];
   private _materialUuid: string;
 
   constructor(
     scope: Array<Texture | TextureLayer> | null,
     materialUuid: string
   ) {
-    this._scope = scope ?? getProjectTextures();
+    this._scope = (scope ?? getProjectTextures()).map(
+      (v: PbrTexture | Texture | TextureLayer) =>
+        ({
+          ...v,
+          channel: (v as PbrTexture).channel ?? NA_CHANNEL,
+        }) as PbrTexture
+    );
     this._materialUuid = materialUuid;
   }
 
@@ -63,9 +75,9 @@ export default class PbrMaterial {
   }
 
   getMaterial(options: THREE.MeshStandardMaterialParameters = {}) {
-    const { emissiveMap, roughnessMap, metalnessMap } = Format.id.startsWith(
-      "bedrock"
-    )
+    const isBedrock = Format.id.startsWith("bedrock");
+
+    const { emissiveMap, roughnessMap, metalnessMap } = isBedrock
       ? this.merToCanvas()
       : {
           emissiveMap: this.getTexture(CHANNELS.emissive),
@@ -74,20 +86,23 @@ export default class PbrMaterial {
         };
 
     const normalMap = this.getTexture(CHANNELS.normal);
+    const map =
+      this.getTexture(CHANNELS.albedo) ??
+      this.getTexture(CHANNELS.specularColor) ??
+      PbrMaterial.makePixelatedCanvas(
+        TextureLayer.selected?.canvas ??
+          Texture.all.find((t) => t.selected)?.canvas ??
+          Texture.getDefault().canvas
+      );
 
-    return new THREE.MeshStandardMaterial({
-      map:
-        this.getTexture(CHANNELS.albedo) ??
-        PbrMaterial.makePixelatedCanvas(
-          TextureLayer.selected?.canvas ??
-            Texture.all.find((t) => t.selected)?.canvas ??
-            Texture.getDefault().canvas
-        ),
-      aoMap: this.getTexture(CHANNELS.ao),
-      bumpMap: this.getTexture(CHANNELS.height),
+    const aoMap = this.getTexture(CHANNELS.ao);
+    const bumpMap = this.getTexture(CHANNELS.height);
+
+    const meshParams = {
+      map,
+      aoMap,
+      bumpMap,
       normalMap,
-      // TODO: Use project settings to determine if normal map should be flipped
-      //normalScale: new THREE.Vector2(-1, 1),
       metalnessMap,
       metalness: metalnessMap ? 1 : 0,
       roughnessMap,
@@ -100,29 +115,60 @@ export default class PbrMaterial {
       alphaTest: 0.01,
       transparent: true,
       ...options,
+    };
+
+    Object.keys(CHANNELS).forEach((channel) => {
+      if (CHANNELS[channel].map in meshParams) {
+        return;
+      }
+
+      const key = CHANNELS[channel].map as keyof typeof meshParams;
+
+      const texture = this.getTexture(CHANNELS[channel]);
+
+      if (texture && key.endsWith("Map")) {
+        meshParams[key] = texture;
+      }
     });
+
+    const shader = (Project as PbrProject).pbr_shader ?? "Blockbench";
+
+    if (shader !== "Blockbench" && shader in THREE && Project) {
+      return new THREE[(Project as PbrProject).pbr_shader as MeshMaterialTypes](
+        meshParams
+      );
+    }
+
+    console.warn(
+      `[PBR Plugin] Invalid material type: ${(Project as PbrProject | undefined)?.pbr_shader ?? "unknown"}. Defaulting to MeshStandardMaterial`
+    );
+    return new THREE.MeshStandardMaterial(meshParams);
   }
 
-  renderMaterialPreview() {
-    const previewImage = generatePreviewImage(this.getMaterial());
-    return previewImage;
-  }
+  // renderMaterialPreview() {
+  //   const previewImage = generatePreviewImage(this.getMaterial());
+  //   return previewImage;
+  // }
 
-  saveTexture(channel: IChannel, texture: Texture | TextureLayer) {
+  saveTexture(channel: IChannel, texture: Texture | TextureLayer | PbrTexture) {
     if (!Project) {
       return;
     }
 
-    if (!Project.pbr_materials) {
-      Project.pbr_materials = {};
+    const project: PbrProject = Project as PbrProject;
+
+    if (!project.pbr_materials) {
+      project.pbr_materials = {};
     }
 
-    if (!Project.pbr_materials[this._materialUuid]) {
-      Project.pbr_materials[this._materialUuid] = {};
+    if (!project.pbr_materials[this._materialUuid]) {
+      project.pbr_materials[this._materialUuid] = {};
     }
 
-    Project.pbr_materials[this._materialUuid][channel.id] = texture.uuid;
-    texture.extend({ channel: channel.id });
+    project.pbr_materials[this._materialUuid][channel.id] = texture.uuid;
+    (texture as PbrTexture).extend({ channel: channel.id });
+
+    Project = project;
   }
 
   /**
@@ -134,13 +180,16 @@ export default class PbrMaterial {
   findTexture(
     name: string | IChannel,
     inference = true
-  ): Texture | TextureLayer | null {
+  ): Texture | TextureLayer | PbrTexture | null {
     if (!Project) {
       return null;
     }
 
     const materialChannel = this._scope.find(
-      (t) => t.channel && (t.channel === name || t.channel === name.id)
+      (t) =>
+        t.channel &&
+        (t.channel === name ||
+          (typeof name !== "string" && t.channel === name.id))
     );
 
     if (materialChannel) {
@@ -152,8 +201,12 @@ export default class PbrMaterial {
         ? [name, new RegExp(`_*${name}(\.[^.]+)?$`, "i")]
         : [name.id, name.regex ?? new RegExp(`_*${name.id}(\.[^.]+)?$`, "i")];
 
-    Project.pbr_materials = Project.pbr_materials ?? {};
-    const materialData = Project.pbr_materials[this._materialUuid];
+    const project = {
+      ...Project,
+      pbr_materials: (Project as PbrProject).pbr_materials ?? {},
+    };
+
+    const materialData = project.pbr_materials[this._materialUuid];
 
     // Don't infer the channel if it has already been assigned to NA_CHANNEL
     if (inference && !materialData?.length && channel !== NA_CHANNEL) {
@@ -200,7 +253,7 @@ export default class PbrMaterial {
   }
 
   static extractChannel(
-    texture: Texture | TextureLayer,
+    texture: Texture | TextureLayer | PbrTexture,
     channel: "r" | "g" | "b" | "a"
   ) {
     const canvas = texture.canvas;
@@ -631,9 +684,9 @@ export default class PbrMaterial {
   }
 
   decodeLabPbrSpecular(texture: Texture | TextureLayer): {
-    metalness?: HTMLCanvasElement | null;
+    glossiness?: HTMLCanvasElement | null;
     emissive?: HTMLCanvasElement | null;
-    roughness?: HTMLCanvasElement | null;
+    specular?: HTMLCanvasElement | null;
     sss?: HTMLCanvasElement | null;
     porosity?: HTMLCanvasElement | null;
   } {
@@ -645,17 +698,17 @@ export default class PbrMaterial {
     if (!ctx) {
       return {};
     }
-    const metalnessCanvas = document.createElement("canvas");
-    metalnessCanvas.width = width;
-    metalnessCanvas.height = height;
+    const glossinessCanvas = document.createElement("canvas");
+    glossinessCanvas.width = width;
+    glossinessCanvas.height = height;
 
     const emissiveCanvas = document.createElement("canvas");
     emissiveCanvas.width = width;
     emissiveCanvas.height = height;
 
-    const roughnessCanvas = document.createElement("canvas");
-    roughnessCanvas.width = width;
-    roughnessCanvas.height = height;
+    const specularCanvas = document.createElement("canvas");
+    specularCanvas.width = width;
+    specularCanvas.height = height;
 
     const sssCanvas = document.createElement("canvas");
     sssCanvas.width = width;
@@ -665,9 +718,9 @@ export default class PbrMaterial {
     porosityCanvas.width = width;
     porosityCanvas.height = height;
 
-    const metalnessCtx = metalnessCanvas.getContext("2d");
+    const glossinessCtx = glossinessCanvas.getContext("2d");
     const emissiveCtx = emissiveCanvas.getContext("2d");
-    const roughnessCtx = roughnessCanvas.getContext("2d");
+    const specularCtx = specularCanvas.getContext("2d");
     const sssCtx = sssCanvas.getContext("2d");
     const porosityCtx = porosityCanvas.getContext("2d");
 
@@ -675,40 +728,35 @@ export default class PbrMaterial {
 
     if (
       !data ||
-      !metalnessCtx ||
+      !glossinessCtx ||
       !emissiveCtx ||
-      !roughnessCtx ||
+      !specularCtx ||
       !sssCtx ||
       !porosityCtx
     ) {
       return {};
     }
 
-    const metalnessData = new Uint8ClampedArray(width * height * 4);
+    const glossinessData = new Uint8ClampedArray(width * height * 4);
     const emissiveData = new Uint8ClampedArray(width * height * 4);
-    const roughnessData = new Uint8ClampedArray(width * height * 4);
+    const specularData = new Uint8ClampedArray(width * height * 4);
     const sssData = new Uint8ClampedArray(width * height * 4);
     const porosityData = new Uint8ClampedArray(width * height * 4);
 
     for (let r = 0; r < data.length; r += 4) {
-      // Roughness is inverted smoothness in red channel
-      // Metalness is F0 in green channel
-      // SSS and porosity are stored in blue channel linearly
-      // Emissive is stored in alpha channel linearly
-
       const g = r + 1;
       const b = r + 2;
       const a = r + 3;
 
-      roughnessData[r] = 255 - data[r];
-      roughnessData[g] = 255 - data[r];
-      roughnessData[b] = 255 - data[r];
-      roughnessData[a] = 255;
+      specularData[r] = 255 - data[r];
+      specularData[g] = 255 - data[r];
+      specularData[b] = 255 - data[r];
+      specularData[a] = 255;
 
-      metalnessData[r] = data[g];
-      metalnessData[g] = data[g];
-      metalnessData[b] = data[g];
-      metalnessData[a] = 255;
+      glossinessData[r] = data[g];
+      glossinessData[g] = data[g];
+      glossinessData[b] = data[g];
+      glossinessData[a] = 255;
 
       emissiveData[r] = data[a];
       emissiveData[g] = data[a];
@@ -738,28 +786,24 @@ export default class PbrMaterial {
       }
     }
 
-    metalnessCtx.putImageData(
-      new ImageData(metalnessData, width, height),
+    glossinessCtx.putImageData(
+      new ImageData(glossinessData, width, height),
       0,
       0
     );
 
     emissiveCtx.putImageData(new ImageData(emissiveData, width, height), 0, 0);
 
-    roughnessCtx.putImageData(
-      new ImageData(roughnessData, width, height),
-      0,
-      0
-    );
+    specularCtx.putImageData(new ImageData(specularData, width, height), 0, 0);
 
     sssCtx.putImageData(new ImageData(sssData, width, height), 0, 0);
 
     porosityCtx.putImageData(new ImageData(porosityData, width, height), 0, 0);
 
     return {
-      metalness: metalnessCanvas,
+      glossiness: glossinessCanvas,
       emissive: emissiveCanvas,
-      roughness: roughnessCanvas,
+      specular: specularCanvas,
       sss: sssCanvas,
       porosity: porosityCanvas,
     };

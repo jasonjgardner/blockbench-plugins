@@ -16,6 +16,7 @@ setups.push(() => {
           "display_settings_tone_mapping",
           "display_settings_exposure",
           "display_settings_reset_exposure",
+          "display_settings_pbr_shader",
           "show_channel_select_menu",
         ],
         name: "Display Settings",

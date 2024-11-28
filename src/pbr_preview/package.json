@@ -15,8 +15,8 @@
   "license": "MIT",
   "devDependencies": {
     "@types/three": "^0.157.0",
-    "blockbench-types": "4.9.0",
     "esbuild": "0.19.4",
+    "blockbench-types": "^4.9.0",
     "prettier": "^3.2.5",
     "typescript": "^5.2.2"
   }

@@ -4,6 +4,7 @@ import {
   applyPbrMaterial,
   debounceApplyPbrMaterial,
 } from "../applyPbrMaterial";
+import type { PbrProject } from "../../types";
 
 const setPreviewExposure = (value: number) => {
   const exposureValue = Math.max(-2, Math.min(2, value));
@@ -97,12 +98,43 @@ setups.push(() => {
 
       Blockbench.showQuickMessage(
         `Tone mapping set to ${this.getNameFor(value)}`,
-        2000,
+        2000
       );
 
       if (registry.togglePbr && !registry.togglePbr.value) {
         registry.togglePbr.set(true);
       }
+
+      applyPbrMaterial();
+    },
+  });
+
+  // Select between different types of THREE.js materials: MeshStandardMaterial, MeshPhysicalMaterial, MeshPhongMaterial, MeshToonMaterial, etc.
+  registry.pbrShaderMode = new BarSelect("display_settings_pbr_shader", {
+    category: "preview",
+    name: "PBR Shader",
+    description: "Changes the shader used for PBR materials",
+    type: "select",
+    default_value: "MeshStandardMaterial",
+    value: "MeshStandardMaterial",
+    icon: "style",
+    options: {
+      Blockbench: "Blockbench",
+      MeshBasicMaterial: "Basic",
+      MeshLambertMaterial: "Lambert",
+      MeshPhongMaterial: "Phong",
+      MeshStandardMaterial: "Standard",
+      MeshPhysicalMaterial: "Physical",
+      MeshToonMaterial: "Toon",
+      MeshNormalMaterial: "Normal",
+      MeshDepthMaterial: "Depth",
+    },
+    onChange({ value }) {
+      (Project as PbrProject).pbr_shader = value;
+      Blockbench.showQuickMessage(
+        `PBR Shader set to ${this.getNameFor(value)}`,
+        2000
+      );
 
       applyPbrMaterial();
     },
